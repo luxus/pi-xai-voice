@@ -1,0 +1,5 @@
+node_modules/
+.pi/
+tmp/
+dist/
+.DS_Store

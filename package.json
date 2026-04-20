@@ -1,0 +1,25 @@
+{
+  "name": "pi-xai-voice",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "bunx tsgo -p tsconfig.json --noEmit",
+    "lint": "oxlint --type-aware --type-check src/**/*.ts",
+    "lint:fix": "oxlint --type-aware --type-check --fix src/**/*.ts",
+    "format": "oxfmt --check src/**/*.ts *.md *.json *.yml",
+    "format:fix": "oxfmt --write src/**/*.ts *.md *.json *.yml",
+    "check": "bun run format && bun run lint && bun run typecheck",
+    "check:ci": "bun run check"
+  },
+  "dependencies": {
+    "@mariozechner/pi-ai": "^0.67.68",
+    "@mariozechner/pi-coding-agent": "^0.67.68",
+    "@mariozechner/pi-tui": "^0.67.68",
+    "@sinclair/typebox": "^0.34.49"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.1.0",
+    "@typescript/native-preview": "^7.0.0-dev.20260410.1",
+    "typescript": "^5.7.0"
+  }
+}
