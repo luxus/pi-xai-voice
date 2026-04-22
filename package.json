@@ -1,10 +1,12 @@
 {
   "name": "pi-xai-voice",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Pi extension for xAI voice and audio workflows",
   "license": "MIT",
   "type": "module",
-  "keywords": ["pi-package"],
+  "keywords": [
+    "pi-package"
+  ],
   "scripts": {
     "build": "echo 'nothing to build'",
     "typecheck": "bunx tsgo -p tsconfig.json --noEmit",
@@ -16,7 +18,9 @@
     "check:ci": "bun run check"
   },
   "pi": {
-    "extensions": ["./index.ts"]
+    "extensions": [
+      "./index.ts"
+    ]
   },
   "dependencies": {},
   "devDependencies": {
