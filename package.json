@@ -1,6 +1,6 @@
 {
   "name": "pi-xai-voice",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Pi extension for xAI voice and audio workflows",
   "license": "MIT",
   "type": "module",

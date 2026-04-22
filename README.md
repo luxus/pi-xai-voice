@@ -4,7 +4,7 @@ Pi extension for xAI voice workflows.
 
 ## Install
 
-Via npm registry:
+Via npm registry (provenance attested):
 
 ```bash
 pi install pi-xai-voice
@@ -15,6 +15,19 @@ Via git:
 ```bash
 pi install github:luxus/pi-xai-voice
 ```
+
+## Publishing
+
+This package is published to npm using **OIDC trust via GitHub Actions** with **npm provenance attestation**.
+
+- **No long-lived npm tokens** in repository secrets — authentication uses short-lived OIDC tokens from GitHub's OIDC provider
+- Every publish includes a [provenance attestation](https://docs.npmjs.com/generating-provenance-statements) linking the package to the specific GitHub commit and workflow run
+- Trust established: `luxus/pi-xai-voice` repository, `publish.yml` workflow only
+
+To trigger a release:
+1. Bump version in `package.json`
+2. Push to main
+3. Run the [Publish workflow](https://github.com/luxus/pi-xai-voice/actions/workflows/publish.yml) manually with desired dist-tag (`latest`, `next`, etc.)
 
 ## Why this exists
 
