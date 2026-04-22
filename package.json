@@ -22,7 +22,9 @@
       "./index.ts"
     ]
   },
-  "dependencies": {},
+  "dependencies": {
+    "typebox": "^1.1.24"
+  },
   "devDependencies": {
     "@types/bun": "^1.1.0",
     "@typescript/native-preview": "^7.0.0-dev.20260410.1",

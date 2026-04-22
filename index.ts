@@ -2,7 +2,7 @@ import type { ChildProcess } from "node:child_process";
 import { unlinkSync } from "node:fs";
 import { StringEnum } from "@mariozechner/pi-ai";
 import { defineTool, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { XaiClient } from "./xai-client.ts";
 import {
   createMicrophoneRecordingSnapshot,
