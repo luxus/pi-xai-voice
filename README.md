@@ -2,6 +2,20 @@
 
 Pi extension for xAI voice workflows.
 
+## Install
+
+Via npm registry:
+
+```bash
+pi install pi-xai-voice
+```
+
+Via git:
+
+```bash
+pi install github:luxus/pi-xai-voice
+```
+
 ## Why this exists
 
 xAI shipped dedicated Grok STT and TTS APIs here: [Introducing Grok 3 Speech](https://x.ai/news/grok-stt-and-tts-apis).

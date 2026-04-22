@@ -1,25 +1,32 @@
 {
   "name": "pi-xai-voice",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Pi extension for xAI voice and audio workflows",
+  "license": "MIT",
   "type": "module",
+  "keywords": ["pi-package"],
   "scripts": {
+    "build": "echo 'nothing to build'",
     "typecheck": "bunx tsgo -p tsconfig.json --noEmit",
-    "lint": "oxlint --type-aware --type-check src/**/*.ts",
-    "lint:fix": "oxlint --type-aware --type-check --fix src/**/*.ts",
-    "format": "oxfmt --check src/**/*.ts *.md *.json *.yml",
-    "format:fix": "oxfmt --write src/**/*.ts *.md *.json *.yml",
+    "lint": "oxlint --type-aware --type-check *.ts",
+    "lint:fix": "oxlint --type-aware --type-check --fix *.ts",
+    "format": "oxfmt --check *.ts *.md *.json *.yml",
+    "format:fix": "oxfmt --write *.ts *.md *.json *.yml",
     "check": "bun run format && bun run lint && bun run typecheck",
     "check:ci": "bun run check"
   },
-  "dependencies": {
-    "@mariozechner/pi-ai": "^0.67.68",
-    "@mariozechner/pi-coding-agent": "^0.67.68",
-    "@mariozechner/pi-tui": "^0.67.68",
-    "@sinclair/typebox": "^0.34.49"
+  "pi": {
+    "extensions": ["./index.ts"]
   },
+  "dependencies": {},
   "devDependencies": {
     "@types/bun": "^1.1.0",
     "@typescript/native-preview": "^7.0.0-dev.20260410.1",
     "typescript": "^5.7.0"
-  }
+  },
+  "files": [
+    "*.ts",
+    "tsconfig.json",
+    "README.md"
+  ]
 }
