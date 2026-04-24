@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## Current
+
+### Added
+- Exported `piVoiceAdapterV1` from `voice-adapter.ts` so other Pi extensions can use `pi-xai-voice` as a code-level STT/TTS backend. The adapter reports xAI tag support and exposes the constrained speech-tag allowlist.
+
 ## [0.1.0] - 2026-04-20
 
 Initial release candidate.

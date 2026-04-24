@@ -161,6 +161,26 @@ const client = new XaiClient({ apiKey, baseUrl: config.xai.baseUrl });
 const health = await client.checkHealth();
 ```
 
+
+## Adapter API
+
+`pi-xai-voice/voice-adapter.ts` exports `piVoiceAdapterV1` for other Pi extensions that need a code-level STT/TTS backend instead of LLM-facing tools.
+
+The adapter supports both STT and TTS, reports `tagStyle: "xai"`, and exposes the xAI speech-tag allowlist so callers can prepare tagged spoken text safely. The adapter passes tagged text through to xAI TTS unchanged.
+
+```ts
+import { piVoiceAdapterV1 } from "pi-xai-voice/voice-adapter.ts";
+
+if (piVoiceAdapterV1.isAvailable()) {
+  const transcript = await piVoiceAdapterV1.transcribe({ filePath: "voice.ogg" });
+  const speech = await piVoiceAdapterV1.synthesize({
+    text: "Hello [pause] <soft>world</soft>",
+    voiceId: "eve",
+    language: "en",
+  });
+}
+```
+
 ## Dev
 
 ```bash
