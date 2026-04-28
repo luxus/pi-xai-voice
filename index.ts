@@ -684,7 +684,7 @@ const textToSpeechTool = defineTool({
   label: "text_to_speech",
   description:
     "Generate speech audio from text via xAI /v1/tts. Saves returned audio bytes to local temp file. Can also play audio locally.",
-  promptSnippet: "text_to_speech(text, voiceId?, language?, codec?, play?) -> xAI TTS audio file or local playback",
+  promptSnippet: "text_to_speech(text, voiceId?, language?, codec?, play?) -> xAI TTS audio file or local playback. If a remote-chat delivery tool such as telegram_attach is available and the user requested a spoken remote reply, attach the returned audioPath with that tool.",
   parameters: Type.Object({
     text: Type.String({ description: "Text to speak. Supports xAI speech tags. Max 15,000 chars." }),
     voiceId: Type.Optional(
@@ -781,7 +781,7 @@ const speechToTextTool = defineTool({
   label: "speech_to_text",
   description:
     "Transcribe audio file or remote audio URL via xAI /v1/stt. Supports formatting, diarization, multichannel.",
-  promptSnippet: "speech_to_text(file|url, format?, diarize?, multichannel?) -> xAI transcript",
+  promptSnippet: "speech_to_text(file|url, format?, diarize?, multichannel?) -> xAI transcript. Use local voice/audio file paths forwarded by bridge extensions such as pi-telegram when the user asks about spoken content.",
   parameters: Type.Object({
     file: Type.Optional(Type.String({ description: "Local audio file path." })),
     url: Type.Optional(Type.String({ description: "Remote audio URL for server-side fetch." })),

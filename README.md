@@ -76,9 +76,9 @@ At the moment, cloning and adapting projects is often faster than waiting for up
 
 ## Features
 
-- `text_to_speech` — unary `/v1/tts`, saves audio to temp file, optional local playback with `play: true`
+- `text_to_speech` — unary `/v1/tts`, saves audio to temp file, optional local playback with `play: true`; remote-chat bridges can attach the returned `audioPath` with their own delivery tool
 - `list_tts_voices` — list available xAI voices
-- `speech_to_text` — unary `/v1/stt` from local file or remote URL
+- `speech_to_text` — unary `/v1/stt` from local file or remote URL, including local voice/audio files forwarded by bridge extensions such as pi-telegram
 - `create_realtime_voice_client_secret` — mint short-lived browser/mobile token for `/v1/realtime`
 - `realtime_voice_text_turn` — one-shot text roundtrip over `/v1/realtime`, saves returned PCM as WAV
 - `check_xai_voice_health` — verify auth, base URL, defaults, visible models
