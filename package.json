@@ -2,37 +2,62 @@
   "name": "pi-xai-voice",
   "version": "0.1.4",
   "description": "Pi extension for xAI voice and audio workflows",
-  "license": "MIT",
-  "type": "module",
   "keywords": [
     "pi-package"
   ],
+  "license": "MIT",
+  "bin": {
+    "pi-xai-voice": "./voice-cli.ts",
+    "pi-xai-voice-stt": "./voice-cli.ts",
+    "pi-xai-voice-tts": "./voice-cli.ts"
+  },
+  "files": [
+    "*.ts",
+    "tsconfig.json",
+    "README.md",
+    "voice-cli.ts"
+  ],
+  "type": "module",
   "scripts": {
     "build": "echo 'nothing to build'",
-    "typecheck": "bunx tsgo -p tsconfig.json --noEmit",
+    "typecheck": "tsgo -p tsconfig.json --noEmit",
+    "typecheck:tsc": "tsc --noEmit",
     "lint": "oxlint --type-aware --type-check *.ts",
     "lint:fix": "oxlint --type-aware --type-check --fix *.ts",
-    "format": "oxfmt --check *.ts *.md *.json *.yml",
-    "format:fix": "oxfmt --write *.ts *.md *.json *.yml",
-    "check": "bun run format && bun run lint && bun run typecheck",
-    "check:ci": "bun run check"
+    "format": "oxfmt --check --no-error-on-unmatched-pattern \"*.ts\" \"*.md\" \"*.json\" \"*.yml\" \"package-lock.json\"",
+    "format:fix": "oxfmt --write --no-error-on-unmatched-pattern \"*.ts\" \"*.md\" \"*.json\" \"*.yml\" \"package-lock.json\"",
+    "check": "npm run format && npm run lint && npm run typecheck",
+    "check:ci": "npm run check"
+  },
+  "dependencies": {
+    "typebox": "1.1.37"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-agent-core": "0.74.0",
+    "@earendil-works/pi-ai": "0.74.0",
+    "@earendil-works/pi-coding-agent": "0.74.0",
+    "@earendil-works/pi-tui": "0.74.0",
+    "@types/node": "^24.12.2",
+    "@typescript/native-preview": "7.0.0-dev.20260509.2",
+    "oxfmt": "^0.48.0",
+    "oxlint": "^1.61.0",
+    "oxlint-tsgolint": "^0.22.0",
+    "typescript": "^6.0.3"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-agent-core": "*",
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": ">=1.1.24 <2"
+  },
+  "engines": {
+    "node": ">=24 <26",
+    "npm": ">=11 <12"
   },
   "pi": {
     "extensions": [
       "./index.ts"
     ]
-  },
-  "dependencies": {
-    "typebox": "^1.1.24"
-  },
-  "devDependencies": {
-    "@types/bun": "^1.1.0",
-    "@typescript/native-preview": "^7.0.0-dev.20260410.1",
-    "typescript": "^5.7.0"
-  },
-  "files": [
-    "*.ts",
-    "tsconfig.json",
-    "README.md"
-  ]
+  }
 }
