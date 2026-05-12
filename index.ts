@@ -1,7 +1,8 @@
 import type { ChildProcess } from "node:child_process";
 import { unlinkSync } from "node:fs";
-import { StringEnum } from "@mariozechner/pi-ai";
-import { defineTool, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { writeFile } from "node:fs/promises";
+import { StringEnum } from "@earendil-works/pi-ai";
+import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { XaiClient } from "./xai-client.ts";
 import {
@@ -35,17 +36,28 @@ import {
   DEFAULT_LIVE_TRANSCRIPT_POLL_MS,
   DEFAULT_STT_ENABLED,
   DEFAULT_STT_LANGUAGE,
+  DEFAULT_TAG_AMOUNT,
+  DEFAULT_VOICE_REPLY_MODE,
+  DEFAULT_VOICE_SEND_TRANSCRIPT,
   DEFAULT_VOICE_SHORTCUT,
   DEFAULT_VOICE_SHORTCUT_MODE,
+  DEFAULT_VOICE_SPEECH_STYLE,
   DEFAULT_VOICE_TTS_QUALITY,
   TTS_QUALITY_PRESETS,
   openVoiceSettingsDialog,
   resolveVoicePreferences,
   saveVoicePreferences,
   type VoiceSttLanguage,
+  type VoiceTagAmount,
   type VoicePreviewHandle,
   type VoicePreferences,
 } from "./voice-settings.ts";
+import {
+  onVoiceConfigChanged,
+  registerXaiVoiceTelegramHandler,
+  registerXaiVoiceTelegramSection,
+  setVoiceConfig,
+} from "./voice-telegram-bus.ts";
 
 const VOICE_ID_VALUES = [...XAI_VOICE_IDS] as [string, ...string[]];
 const TTS_CODEC_VALUES = [...XAI_TTS_CODECS] as [string, ...string[]];
@@ -55,7 +67,11 @@ interface VoiceCommandContext {
   ui: {
     notify(message: string, level?: "info" | "success" | "warning" | "error"): void;
     setStatus(key: string, value?: string): void;
-    setWidget(key: string, content: string[] | undefined, options?: { placement?: "aboveEditor" | "belowEditor" }): void;
+    setWidget(
+      key: string,
+      content: string[] | undefined,
+      options?: { placement?: "aboveEditor" | "belowEditor" },
+    ): void;
     getEditorText(): string;
     setEditorText(text: string): void;
     pasteToEditor(text: string): void;
@@ -86,7 +102,13 @@ const LIVE_TRANSCRIPT_GHOST_COLORS = ["3;90", "2;37", "3;37", "2;90"] as const;
 const LISTENING_WIDGET_KEY = "xai-voice-listening";
 const LISTENING_WIDGET_PLACEMENT = "aboveEditor" as const;
 const LISTENING_WIDGET_LEVELS = [1, 2, 3, 4, 5, 4, 3, 2] as const;
-const LISTENING_WIDGET_BAR_COLORS = ["38;5;46", "38;5;82", "38;5;226", "38;5;214", "38;5;203"] as const;
+const LISTENING_WIDGET_BAR_COLORS = [
+  "38;5;46",
+  "38;5;82",
+  "38;5;226",
+  "38;5;214",
+  "38;5;203",
+] as const;
 const LIVE_TRANSCRIPT_MIN_BYTES = 16_000;
 
 function ansi(code: string, text: string): string {
@@ -116,7 +138,9 @@ function setActiveVoicePreferences(preferences: VoicePreferences): void {
 function renderLiveTranscriptPreviewText(transcript: string): string {
   const cleanTranscript = transcript.trim();
   if (!liveTranscriptGhostText || !cleanTranscript) return cleanTranscript;
-  const color = LIVE_TRANSCRIPT_GHOST_COLORS[liveTranscriptGhostFrame % LIVE_TRANSCRIPT_GHOST_COLORS.length] ?? "3;90";
+  const color =
+    LIVE_TRANSCRIPT_GHOST_COLORS[liveTranscriptGhostFrame % LIVE_TRANSCRIPT_GHOST_COLORS.length] ??
+    "3;90";
   return ansi(color, cleanTranscript);
 }
 
@@ -124,12 +148,17 @@ function mergeTranscriptIntoEditor(baseText: string, transcript: string): string
   const cleanTranscript = transcript.trim();
   if (!cleanTranscript) return baseText;
   if (!baseText) return cleanTranscript;
-  return /[\s\n]$/.test(baseText) ? `${baseText}${cleanTranscript}` : `${baseText}\n${cleanTranscript}`;
+  return /[\s\n]$/.test(baseText)
+    ? `${baseText}${cleanTranscript}`
+    : `${baseText}\n${cleanTranscript}`;
 }
 
 function setLiveTranscriptPreview(ctx: VoiceCommandContext, transcript: string): void {
   ctx.ui.setEditorText(
-    mergeTranscriptIntoEditor(liveTranscriptBaseEditorText, renderLiveTranscriptPreviewText(transcript)),
+    mergeTranscriptIntoEditor(
+      liveTranscriptBaseEditorText,
+      renderLiveTranscriptPreviewText(transcript),
+    ),
   );
   liveTranscriptPreviewActive = transcript.trim().length > 0;
 }
@@ -164,23 +193,31 @@ function createRuntime(log = createLogger()): {
     liveTranscriptEnabled: boolean;
     liveTranscriptPollingMs: number;
     liveTranscriptGhostText: boolean;
+    tagAmount: VoiceTagAmount;
+    replyMode?: "voice-received" | "always" | "on-request";
+    speechStyle?: "literal" | "rewrite-light" | "rewrite-tags";
+    sendTranscript?: boolean;
   };
 } {
   const { apiKey, source, config } = getRequiredXaiApiKey();
   const voiceConfig = config.xai.voice;
   const preferences = resolveVoicePreferences(voiceConfig);
-  const defaultVoice = typeof voiceConfig.defaultVoice === "string" && voiceConfig.defaultVoice.trim()
-    ? voiceConfig.defaultVoice.trim()
-    : undefined;
-  const defaultLanguage = typeof voiceConfig.defaultLanguage === "string" && voiceConfig.defaultLanguage.trim()
-    ? voiceConfig.defaultLanguage.trim()
-    : undefined;
+  const defaultVoice =
+    typeof voiceConfig.defaultVoice === "string" && voiceConfig.defaultVoice.trim()
+      ? voiceConfig.defaultVoice.trim()
+      : undefined;
+  const defaultLanguage =
+    typeof voiceConfig.defaultLanguage === "string" && voiceConfig.defaultLanguage.trim()
+      ? voiceConfig.defaultLanguage.trim()
+      : undefined;
   const ephemeralTokenSeconds =
-    typeof voiceConfig.ephemeralTokenSeconds === "number" && Number.isFinite(voiceConfig.ephemeralTokenSeconds)
+    typeof voiceConfig.ephemeralTokenSeconds === "number" &&
+    Number.isFinite(voiceConfig.ephemeralTokenSeconds)
       ? voiceConfig.ephemeralTokenSeconds
       : undefined;
   const microphoneDeviceIndex =
-    typeof voiceConfig.microphoneDeviceIndex === "number" && Number.isFinite(voiceConfig.microphoneDeviceIndex)
+    typeof voiceConfig.microphoneDeviceIndex === "number" &&
+    Number.isFinite(voiceConfig.microphoneDeviceIndex)
       ? voiceConfig.microphoneDeviceIndex
       : undefined;
   return {
@@ -192,7 +229,8 @@ function createRuntime(log = createLogger()): {
     defaults: {
       voiceId: preferences.voiceId || defaultVoice || DEFAULT_XAI_VOICE_ID,
       ttsQuality: preferences.ttsQuality || DEFAULT_VOICE_TTS_QUALITY,
-      sttEnabled: typeof preferences.sttEnabled === "boolean" ? preferences.sttEnabled : DEFAULT_STT_ENABLED,
+      sttEnabled:
+        typeof preferences.sttEnabled === "boolean" ? preferences.sttEnabled : DEFAULT_STT_ENABLED,
       sttLanguage: preferences.sttLanguage || DEFAULT_STT_LANGUAGE,
       language: defaultLanguage || DEFAULT_XAI_VOICE_LANGUAGE,
       shortcut: preferences.shortcut || DEFAULT_VOICE_SHORTCUT,
@@ -203,11 +241,16 @@ function createRuntime(log = createLogger()): {
         typeof preferences.liveTranscriptEnabled === "boolean"
           ? preferences.liveTranscriptEnabled
           : DEFAULT_LIVE_TRANSCRIPT_ENABLED,
-      liveTranscriptPollingMs: preferences.liveTranscriptPollingMs || DEFAULT_LIVE_TRANSCRIPT_POLL_MS,
+      liveTranscriptPollingMs:
+        preferences.liveTranscriptPollingMs || DEFAULT_LIVE_TRANSCRIPT_POLL_MS,
       liveTranscriptGhostText:
         typeof preferences.liveTranscriptGhostText === "boolean"
           ? preferences.liveTranscriptGhostText
           : DEFAULT_LIVE_TRANSCRIPT_GHOST_TEXT,
+      tagAmount: preferences.tagAmount || DEFAULT_TAG_AMOUNT,
+      replyMode: preferences.replyMode || DEFAULT_VOICE_REPLY_MODE,
+      speechStyle: preferences.speechStyle || DEFAULT_VOICE_SPEECH_STYLE,
+      sendTranscript: typeof preferences.sendTranscript === "boolean" ? preferences.sendTranscript : DEFAULT_VOICE_SEND_TRANSCRIPT,
     },
   };
 }
@@ -298,7 +341,9 @@ function sttSummary(result: {
   return lines.join("\n");
 }
 
-function voicesSummary(voices: Array<{ voiceId: string; name?: string; tone?: string; description?: string }>) {
+function voicesSummary(
+  voices: Array<{ voiceId: string; name?: string; tone?: string; description?: string }>,
+) {
   if (!voices.length) return "No voices returned.";
   return [
     `Available voices: ${voices.length}`,
@@ -369,7 +414,11 @@ function resolveSpeakText(args: string | undefined, ctx: VoiceCommandContext): s
   return getLastAssistantText(ctx);
 }
 
-async function playAudioFile(filePath: string, log: XaiMediaLogger, options?: { wait?: boolean }): Promise<void> {
+async function playAudioFile(
+  filePath: string,
+  log: XaiMediaLogger,
+  options?: { wait?: boolean },
+): Promise<void> {
   stopAudioPlayback(activePlayback);
   activePlayback = await startAudioPlayback(filePath, log);
   const playback = activePlayback;
@@ -392,16 +441,23 @@ function inferPreviewExtension(previewUrl: string): string {
   }
 }
 
-async function downloadVoicePreview(previewUrl: string, filePath: string, signal: AbortSignal): Promise<void> {
+async function downloadVoicePreview(
+  previewUrl: string,
+  filePath: string,
+  signal: AbortSignal,
+): Promise<void> {
   const response = await fetch(previewUrl, { signal });
   if (!response.ok) {
     throw new Error(`Preview download failed: ${response.status}`);
   }
   const bytes = Buffer.from(await response.arrayBuffer());
-  await Bun.write(filePath, bytes);
+  await writeFile(filePath, bytes);
 }
 
-async function startVoicePreviewPlayback(previewUrl: string, _ctx: VoiceCommandContext): Promise<VoicePreviewHandle> {
+async function startVoicePreviewPlayback(
+  previewUrl: string,
+  _ctx: VoiceCommandContext,
+): Promise<VoicePreviewHandle> {
   const runtime = createRuntime();
   const filePath = createLocalAudioTempPath("voice-preview", inferPreviewExtension(previewUrl));
   const controller = new AbortController();
@@ -475,7 +531,9 @@ function resetVoiceCaptureUi(ctx: VoiceCommandContext): void {
 
 function renderListeningWidget(ctx: VoiceCommandContext): void {
   const level = LISTENING_WIDGET_LEVELS[listeningWidgetFrame % LISTENING_WIDGET_LEVELS.length] ?? 1;
-  ctx.ui.setWidget(LISTENING_WIDGET_KEY, [renderListeningMeter(level)], { placement: LISTENING_WIDGET_PLACEMENT });
+  ctx.ui.setWidget(LISTENING_WIDGET_KEY, [renderListeningMeter(level)], {
+    placement: LISTENING_WIDGET_PLACEMENT,
+  });
 }
 
 function startListeningWidget(ctx: VoiceCommandContext): void {
@@ -684,9 +742,12 @@ const textToSpeechTool = defineTool({
   label: "text_to_speech",
   description:
     "Generate speech audio from text via xAI /v1/tts. Saves returned audio bytes to local temp file. Can also play audio locally.",
-  promptSnippet: "text_to_speech(text, voiceId?, language?, codec?, play?) -> xAI TTS audio file or local playback. If a remote-chat delivery tool such as telegram_attach is available and the user requested a spoken remote reply, attach the returned audioPath with that tool.",
+  promptSnippet:
+    "text_to_speech(text, voiceId?, language?, codec?, play?) -> xAI TTS audio file or local playback. If a remote-chat delivery tool such as telegram_attach is available and the user requested a spoken remote reply, attach the returned audioPath with that tool.",
   parameters: Type.Object({
-    text: Type.String({ description: "Text to speak. Supports xAI speech tags. Max 15,000 chars." }),
+    text: Type.String({
+      description: "Text to speak. Supports xAI speech tags. Max 15,000 chars.",
+    }),
     voiceId: Type.Optional(
       StringEnum(VOICE_ID_VALUES, {
         description: `Voice override. Default from xai.voice.defaultVoice or ${DEFAULT_XAI_VOICE_ID}.`,
@@ -699,7 +760,8 @@ const textToSpeechTool = defineTool({
     ),
     codec: Type.Optional(
       StringEnum(TTS_CODEC_VALUES, {
-        description: "Output codec. mp3 default. wav good for editing. pcm/mulaw/alaw for pipelines.",
+        description:
+          "Output codec. mp3 default. wav good for editing. pcm/mulaw/alaw for pipelines.",
       }),
     ),
     sampleRate: Type.Optional(
@@ -781,7 +843,8 @@ const speechToTextTool = defineTool({
   label: "speech_to_text",
   description:
     "Transcribe audio file or remote audio URL via xAI /v1/stt. Supports formatting, diarization, multichannel.",
-  promptSnippet: "speech_to_text(file|url, format?, diarize?, multichannel?) -> xAI transcript. Use local voice/audio file paths forwarded by bridge extensions such as pi-telegram when the user asks about spoken content.",
+  promptSnippet:
+    "speech_to_text(file|url, format?, diarize?, multichannel?) -> xAI transcript. Use local voice/audio file paths forwarded by bridge extensions such as pi-telegram when the user asks about spoken content.",
   parameters: Type.Object({
     file: Type.Optional(Type.String({ description: "Local audio file path." })),
     url: Type.Optional(Type.String({ description: "Remote audio URL for server-side fetch." })),
@@ -856,7 +919,9 @@ const createRealtimeClientSecretTool = defineTool({
       "Created realtime client secret.",
       `TTL: ${result.expiresAfterSeconds}s`,
       ...(result.expiresAt !== undefined ? [`Expires at: ${String(result.expiresAt)}`] : []),
-      ...(result.clientSecret ? ["Client secret returned in tool details."] : ["Raw response returned in tool details."]),
+      ...(result.clientSecret
+        ? ["Client secret returned in tool details."]
+        : ["Raw response returned in tool details."]),
     ];
     return {
       content: [{ type: "text", text: lines.join("\n") }],
@@ -874,7 +939,9 @@ const realtimeVoiceTextTurnTool = defineTool({
     "realtime_voice_text_turn(text, instructions?, voice?) -> one-shot xAI realtime response + wav file",
   parameters: Type.Object({
     text: Type.String({ description: "User message to send into realtime voice session." }),
-    instructions: Type.Optional(Type.String({ description: "Session instructions/system prompt." })),
+    instructions: Type.Optional(
+      Type.String({ description: "Session instructions/system prompt." }),
+    ),
     voice: Type.Optional(
       StringEnum(VOICE_ID_VALUES, {
         description: `Voice override. Default from xai.voice.defaultVoice or ${DEFAULT_XAI_VOICE_ID}.`,
@@ -939,8 +1006,46 @@ const checkXaiVoiceHealthTool = defineTool({
 });
 
 export default function piXaiVoiceExtension(pi: ExtensionAPI): void {
+  function registerVoiceTelegramBus(): void {
+    // Register voice outbound handler (function-based TTS backend).
+    registerXaiVoiceTelegramHandler().catch(() => undefined);
+    // Register voice extension section (UI settings in Telegram /menu).
+    registerXaiVoiceTelegramSection().catch(() => undefined);
+  }
+
+  registerVoiceTelegramBus();
+
+  // Periodic re-registration to handle session-resume scenarios
+  // where pi-telegram may reset its registry but our extension is not reloaded.
+  setInterval(() => {
+    registerVoiceTelegramBus();
+  }, 30_000);
+
   pi.on("session_start", async (_event, ctx) => {
-    setActiveVoicePreferences(createRuntime().defaults);
+    const runtime = createRuntime();
+    setActiveVoicePreferences(runtime.defaults);
+    // Sync Pi voice settings with Telegram shared config
+    setVoiceConfig({
+      defaultVoice: runtime.defaults.voiceId,
+      defaultLanguage: runtime.defaults.language,
+      replyMode: runtime.defaults.replyMode,
+      speechStyle: runtime.defaults.speechStyle,
+      sendTranscript: runtime.defaults.sendTranscript,
+    });
+    registerVoiceTelegramBus();
+    onVoiceConfigChanged((config) => {
+      const currentPrefs = getActiveVoicePreferences();
+      const updatedPrefs = {
+        ...currentPrefs,
+        voiceId: config.defaultVoice,
+        defaultLanguage: config.defaultLanguage,
+        replyMode: config.replyMode,
+        speechStyle: config.speechStyle,
+        sendTranscript: config.sendTranscript,
+      };
+      saveVoicePreferences(ctx.cwd, updatedPrefs, "project");
+      setActiveVoicePreferences(updatedPrefs);
+    });
     ctx.ui.setEditorComponent(
       (tui, theme, keybindings) =>
         new VoicePushToTalkEditor(tui, theme, keybindings, {
@@ -977,7 +1082,10 @@ export default function piXaiVoiceExtension(pi: ExtensionAPI): void {
     handler: async (args, ctx) => {
       const text = resolveSpeakText(args, ctx);
       if (!text) {
-        ctx.ui.notify("No text found. Pass text, fill editor, or wait for assistant reply.", "warning");
+        ctx.ui.notify(
+          "No text found. Pass text, fill editor, or wait for assistant reply.",
+          "warning",
+        );
         return;
       }
       try {
@@ -1015,6 +1123,7 @@ export default function piXaiVoiceExtension(pi: ExtensionAPI): void {
         liveTranscriptEnabled: current.liveTranscriptEnabled,
         liveTranscriptPollingMs: current.liveTranscriptPollingMs,
         liveTranscriptGhostText: current.liveTranscriptGhostText,
+        tagAmount: current.tagAmount,
       };
 
       const updated = await openVoiceSettingsDialog(ctx, draft, voices, async (voice) => {

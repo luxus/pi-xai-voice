@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import type { ExtensionCommandContext, Theme } from "@mariozechner/pi-coding-agent";
+import type { ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
 import {
   isKeyRelease,
   matchesKey,
@@ -9,7 +9,7 @@ import {
   truncateToWidth,
   visibleWidth,
   type Focusable,
-} from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-tui";
 import { DEFAULT_XAI_VOICE_ID, XAI_VOICE_IDS, type XaiTtsVoice } from "./xai-voice.ts";
 
 export type VoiceShortcutMode = "push-to-talk" | "toggle";
@@ -17,6 +17,7 @@ export type VoiceTtsQuality = "low" | "medium" | "high";
 export type VoiceSettingsScope = "project" | "global";
 export type VoiceSettingsTab = "tts" | "stt";
 export type VoiceSttLanguage = "auto" | "de" | "en" | "fr" | "es" | "it" | "pt" | "nl" | "ja";
+export type VoiceTagAmount = "minimal" | "moderate" | "expressive";
 
 export interface VoicePreferences {
   voiceId: string;
@@ -28,6 +29,11 @@ export interface VoicePreferences {
   liveTranscriptEnabled: boolean;
   liveTranscriptPollingMs: number;
   liveTranscriptGhostText: boolean;
+  tagAmount: VoiceTagAmount;
+  replyMode?: "voice-received" | "always" | "on-request";
+  speechStyle?: "literal" | "rewrite-light" | "rewrite-tags";
+  defaultLanguage?: string;
+  sendTranscript?: boolean;
 }
 
 export const DEFAULT_VOICE_SHORTCUT = "alt+m";
@@ -38,12 +44,28 @@ export const DEFAULT_STT_LANGUAGE: VoiceSttLanguage = "auto";
 export const DEFAULT_LIVE_TRANSCRIPT_ENABLED = true;
 export const DEFAULT_LIVE_TRANSCRIPT_POLL_MS = 1000;
 export const DEFAULT_LIVE_TRANSCRIPT_GHOST_TEXT = true;
+export const DEFAULT_TAG_AMOUNT: VoiceTagAmount = "moderate";
+export const DEFAULT_VOICE_REPLY_MODE: VoicePreferences["replyMode"] = "voice-received";
+export const DEFAULT_VOICE_SPEECH_STYLE: VoicePreferences["speechStyle"] = "literal";
+export const DEFAULT_VOICE_DEFAULT_LANGUAGE = "auto";
+export const DEFAULT_VOICE_SEND_TRANSCRIPT = false;
 
 export const VOICE_SHORTCUT_MODE_VALUES: VoiceShortcutMode[] = ["push-to-talk", "toggle"];
 export const VOICE_TTS_QUALITY_VALUES: VoiceTtsQuality[] = ["low", "medium", "high"];
-export const VOICE_STT_LANGUAGE_VALUES: VoiceSttLanguage[] = ["auto", "de", "en", "fr", "es", "it", "pt", "nl", "ja"];
+export const VOICE_STT_LANGUAGE_VALUES: VoiceSttLanguage[] = [
+  "auto",
+  "de",
+  "en",
+  "fr",
+  "es",
+  "it",
+  "pt",
+  "nl",
+  "ja",
+];
 export const VOICE_POLLING_VALUES = [800, 1000, 1200, 1500, 2000] as const;
 export const VOICE_ID_VALUES = [...XAI_VOICE_IDS] as string[];
+export const VOICE_TAG_AMOUNT_VALUES: VoiceTagAmount[] = ["minimal", "moderate", "expressive"];
 
 export const TTS_QUALITY_PRESETS: Record<
   VoiceTtsQuality,
@@ -91,6 +113,18 @@ function isSttLanguage(value: string | undefined): value is VoiceSttLanguage {
   return Boolean(value && VOICE_STT_LANGUAGE_VALUES.includes(value as VoiceSttLanguage));
 }
 
+function isTagAmount(value: string | undefined): value is VoiceTagAmount {
+  return value === "minimal" || value === "moderate" || value === "expressive";
+}
+
+function isReplyMode(value: string | undefined): value is VoicePreferences["replyMode"] {
+  return value === "voice-received" || value === "always" || value === "on-request";
+}
+
+function isSpeechStyle(value: string | undefined): value is VoicePreferences["speechStyle"] {
+  return value === "literal" || value === "rewrite-light" || value === "rewrite-tags";
+}
+
 export function resolveVoicePreferences(voiceConfig: Record<string, unknown>): VoicePreferences {
   const voiceId = getString(voiceConfig, "defaultVoice");
   const shortcut = getString(voiceConfig, "shortcut");
@@ -101,6 +135,11 @@ export function resolveVoicePreferences(voiceConfig: Record<string, unknown>): V
   const liveTranscriptEnabled = getBoolean(voiceConfig, "liveTranscriptEnabled");
   const liveTranscriptPollingMs = getNumber(voiceConfig, "liveTranscriptPollingMs");
   const liveTranscriptGhostText = getBoolean(voiceConfig, "liveTranscriptGhostText");
+  const tagAmount = getString(voiceConfig, "tagAmount");
+  const replyMode = getString(voiceConfig, "replyMode");
+  const speechStyle = getString(voiceConfig, "speechStyle");
+  const defaultLanguage = getString(voiceConfig, "defaultLanguage");
+  const sendTranscript = getBoolean(voiceConfig, "sendTranscript");
 
   return {
     voiceId: isVoiceId(voiceId) ? voiceId : DEFAULT_XAI_VOICE_ID,
@@ -110,7 +149,9 @@ export function resolveVoicePreferences(voiceConfig: Record<string, unknown>): V
     shortcut: shortcut || DEFAULT_VOICE_SHORTCUT,
     shortcutMode: isShortcutMode(shortcutMode) ? shortcutMode : DEFAULT_VOICE_SHORTCUT_MODE,
     liveTranscriptEnabled:
-      typeof liveTranscriptEnabled === "boolean" ? liveTranscriptEnabled : DEFAULT_LIVE_TRANSCRIPT_ENABLED,
+      typeof liveTranscriptEnabled === "boolean"
+        ? liveTranscriptEnabled
+        : DEFAULT_LIVE_TRANSCRIPT_ENABLED,
     liveTranscriptPollingMs:
       typeof liveTranscriptPollingMs === "number" && liveTranscriptPollingMs >= 200
         ? liveTranscriptPollingMs
@@ -119,6 +160,11 @@ export function resolveVoicePreferences(voiceConfig: Record<string, unknown>): V
       typeof liveTranscriptGhostText === "boolean"
         ? liveTranscriptGhostText
         : DEFAULT_LIVE_TRANSCRIPT_GHOST_TEXT,
+    tagAmount: isTagAmount(tagAmount) ? tagAmount : DEFAULT_TAG_AMOUNT,
+    replyMode: isReplyMode(replyMode) ? replyMode : DEFAULT_VOICE_REPLY_MODE,
+    speechStyle: isSpeechStyle(speechStyle) ? speechStyle : DEFAULT_VOICE_SPEECH_STYLE,
+    defaultLanguage: defaultLanguage || DEFAULT_VOICE_DEFAULT_LANGUAGE,
+    sendTranscript: typeof sendTranscript === "boolean" ? sendTranscript : DEFAULT_VOICE_SEND_TRANSCRIPT,
   };
 }
 
@@ -148,8 +194,10 @@ export function saveVoicePreferences(
 ): string {
   const path = scope === "global" ? getGlobalSettingsPath() : getProjectSettingsPath(cwd);
   const root = readSettingsFile(path);
-  const xai = root.xai && typeof root.xai === "object" ? { ...(root.xai as Record<string, unknown>) } : {};
-  const voice = xai.voice && typeof xai.voice === "object" ? { ...(xai.voice as Record<string, unknown>) } : {};
+  const xai =
+    root.xai && typeof root.xai === "object" ? { ...(root.xai as Record<string, unknown>) } : {};
+  const voice =
+    xai.voice && typeof xai.voice === "object" ? { ...(xai.voice as Record<string, unknown>) } : {};
 
   voice.defaultVoice = prefs.voiceId;
   voice.ttsQuality = prefs.ttsQuality;
@@ -161,6 +209,11 @@ export function saveVoicePreferences(
   voice.liveTranscriptEnabled = prefs.liveTranscriptEnabled;
   voice.liveTranscriptPollingMs = prefs.liveTranscriptPollingMs;
   voice.liveTranscriptGhostText = prefs.liveTranscriptGhostText;
+  voice.tagAmount = prefs.tagAmount;
+  if (prefs.replyMode) voice.replyMode = prefs.replyMode;
+  if (prefs.speechStyle) voice.speechStyle = prefs.speechStyle;
+  if (prefs.defaultLanguage) voice.defaultLanguage = prefs.defaultLanguage;
+  voice.sendTranscript = prefs.sendTranscript;
 
   xai.voice = voice;
   root.xai = xai;
@@ -245,9 +298,7 @@ export interface VoicePreviewHandle {
 }
 
 function formatLabel(label: string): string {
-  return label
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (match) => match.toUpperCase());
+  return label.replace(/_/g, " ").replace(/\b\w/g, (match) => match.toUpperCase());
 }
 
 function getVoiceMetadataLines(voice: XaiTtsVoice | undefined): string[] {
@@ -266,9 +317,15 @@ function getVoiceMetadataLines(voice: XaiTtsVoice | undefined): string[] {
   if (voice.tone?.trim()) seen.add(voice.tone.trim().toLowerCase());
 
   for (const [key, rawValue] of Object.entries(voice.raw)) {
-    if (["voice_id", "name", "tone", "description", "preview_url", "sample_url"].includes(key)) continue;
+    if (["voice_id", "name", "tone", "description", "preview_url", "sample_url"].includes(key))
+      continue;
     if (rawValue === undefined || rawValue === null) continue;
-    if (typeof rawValue !== "string" && typeof rawValue !== "number" && typeof rawValue !== "boolean") continue;
+    if (
+      typeof rawValue !== "string" &&
+      typeof rawValue !== "number" &&
+      typeof rawValue !== "boolean"
+    )
+      continue;
     const value = String(rawValue).trim();
     if (!value) continue;
     if (seen.has(value.toLowerCase())) continue;
@@ -488,10 +545,18 @@ class VoiceSettingsDialog implements Focusable {
   private adjustSelected(delta: number): void {
     switch (this.getSelectedRow()) {
       case "voiceId":
-        this.preferences.voiceId = cycleValue(this.getVoiceValues(), this.preferences.voiceId, delta);
+        this.preferences.voiceId = cycleValue(
+          this.getVoiceValues(),
+          this.preferences.voiceId,
+          delta,
+        );
         return;
       case "ttsQuality":
-        this.preferences.ttsQuality = cycleValue(VOICE_TTS_QUALITY_VALUES, this.preferences.ttsQuality, delta);
+        this.preferences.ttsQuality = cycleValue(
+          VOICE_TTS_QUALITY_VALUES,
+          this.preferences.ttsQuality,
+          delta,
+        );
         return;
       case "playPreview":
         return;
@@ -500,7 +565,11 @@ class VoiceSettingsDialog implements Focusable {
         return;
       case "sttLanguage":
         if (!this.preferences.sttEnabled) return;
-        this.preferences.sttLanguage = cycleValue(VOICE_STT_LANGUAGE_VALUES, this.preferences.sttLanguage, delta);
+        this.preferences.sttLanguage = cycleValue(
+          VOICE_STT_LANGUAGE_VALUES,
+          this.preferences.sttLanguage,
+          delta,
+        );
         return;
       case "shortcut":
         if (!this.preferences.sttEnabled) return;
@@ -516,7 +585,9 @@ class VoiceSettingsDialog implements Focusable {
         return;
       case "liveTranscriptEnabled":
         if (!this.preferences.sttEnabled) return;
-        this.preferences.liveTranscriptEnabled = toggleBoolean(this.preferences.liveTranscriptEnabled);
+        this.preferences.liveTranscriptEnabled = toggleBoolean(
+          this.preferences.liveTranscriptEnabled,
+        );
         return;
       case "liveTranscriptPollingMs":
         if (!this.preferences.sttEnabled || !this.preferences.liveTranscriptEnabled) return;
@@ -528,7 +599,9 @@ class VoiceSettingsDialog implements Focusable {
         return;
       case "liveTranscriptGhostText":
         if (!this.preferences.sttEnabled || !this.preferences.liveTranscriptEnabled) return;
-        this.preferences.liveTranscriptGhostText = toggleBoolean(this.preferences.liveTranscriptGhostText);
+        this.preferences.liveTranscriptGhostText = toggleBoolean(
+          this.preferences.liveTranscriptGhostText,
+        );
         return;
       default:
         return;
@@ -539,13 +612,17 @@ class VoiceSettingsDialog implements Focusable {
     const th = this.theme;
     if (!selectedVoice?.previewUrl) {
       return [
-        th.fg("border", "│") + padRight(` ${th.fg("dim", "No preview sample available for this voice")}`, innerWidth) + th.fg("border", "│"),
+        th.fg("border", "│") +
+          padRight(` ${th.fg("dim", "No preview sample available for this voice")}`, innerWidth) +
+          th.fg("border", "│"),
       ];
     }
 
     const isSelected = this.getSelectedRow() === "playPreview";
-    const spinner = PREVIEW_LOADING_FRAMES[this.previewAnimationFrame % PREVIEW_LOADING_FRAMES.length] ?? "⠋";
-    const wave = PREVIEW_PLAYING_FRAMES[this.previewAnimationFrame % PREVIEW_PLAYING_FRAMES.length] ?? "▁▂▃▅▇";
+    const spinner =
+      PREVIEW_LOADING_FRAMES[this.previewAnimationFrame % PREVIEW_LOADING_FRAMES.length] ?? "⠋";
+    const wave =
+      PREVIEW_PLAYING_FRAMES[this.previewAnimationFrame % PREVIEW_PLAYING_FRAMES.length] ?? "▁▂▃▅▇";
     const buttonText =
       this.previewState === "loading"
         ? `${spinner} Loading Preview`
@@ -564,8 +641,12 @@ class VoiceSettingsDialog implements Focusable {
 
     return [
       th.fg("border", "│") + padRight("", innerWidth) + th.fg("border", "│"),
-      th.fg("border", "│") + th.fg(buttonColor, centerText(buttonText, innerWidth)) + th.fg("border", "│"),
-      th.fg("border", "│") + padRight(` ${th.fg("dim", truncateToWidth(hint, innerWidth - 1, "…"))}`, innerWidth) + th.fg("border", "│"),
+      th.fg("border", "│") +
+        th.fg(buttonColor, centerText(buttonText, innerWidth)) +
+        th.fg("border", "│"),
+      th.fg("border", "│") +
+        padRight(` ${th.fg("dim", truncateToWidth(hint, innerWidth - 1, "…"))}`, innerWidth) +
+        th.fg("border", "│"),
       th.fg("border", "│") + padRight("", innerWidth) + th.fg("border", "│"),
     ];
   }
@@ -580,14 +661,22 @@ class VoiceSettingsDialog implements Focusable {
     const rows = this.getRows();
 
     const row = (content: string) =>
-      th.fg("border", "│") + padRight(truncateLine(content, innerWidth), innerWidth) + th.fg("border", "│");
+      th.fg("border", "│") +
+      padRight(truncateLine(content, innerWidth), innerWidth) +
+      th.fg("border", "│");
 
     const renderValue = (value: string, enabled = true, selected = false): string => {
       if (!enabled) return th.fg("dim", value);
       return selected ? th.fg("success", value) : th.fg("text", value);
     };
 
-    const renderRow = (index: number, label: string, value: string, hint?: string, enabled = true): void => {
+    const renderRow = (
+      index: number,
+      label: string,
+      value: string,
+      hint?: string,
+      enabled = true,
+    ): void => {
       const selected = index === this.selected;
       const prefix = selected ? th.fg("accent", "▶") : th.fg("dim", " ");
       const labelText = enabled
@@ -676,7 +765,9 @@ class VoiceSettingsDialog implements Focusable {
             rowIndex,
             "Live text preview",
             this.preferences.liveTranscriptEnabled ? "on" : "off",
-            this.preferences.liveTranscriptEnabled ? "Text appears while speaking" : "Off = cheaper final-only STT",
+            this.preferences.liveTranscriptEnabled
+              ? "Text appears while speaking"
+              : "Off = cheaper final-only STT",
             this.preferences.sttEnabled,
           );
           break;
@@ -715,7 +806,9 @@ class VoiceSettingsDialog implements Focusable {
     const metadataLines = getVoiceMetadataLines(selectedVoice);
     lines.push(row(""));
     if (this.activeTab === "tts") {
-      lines.push(row(` ${th.fg("accent", "Selected voice")}: ${th.fg("text", selectedVoiceLabel)}`));
+      lines.push(
+        row(` ${th.fg("accent", "Selected voice")}: ${th.fg("text", selectedVoiceLabel)}`),
+      );
       lines.push(...this.renderPreviewHero(innerWidth, selectedVoice));
       for (const line of metadataLines) {
         lines.push(row(` ${th.fg("dim", line)}`));
@@ -726,10 +819,22 @@ class VoiceSettingsDialog implements Focusable {
         ),
       );
     } else {
-      lines.push(row(` ${th.fg("dim", "Hint: live preview polls STT repeatedly; final-only mode is cheaper.")}`));
-      lines.push(row(` ${th.fg("dim", "Language hint: auto is default; force only when detection drifts.")}`));
+      lines.push(
+        row(
+          ` ${th.fg("dim", "Hint: live preview polls STT repeatedly; final-only mode is cheaper.")}`,
+        ),
+      );
+      lines.push(
+        row(
+          ` ${th.fg("dim", "Language hint: auto is default; force only when detection drifts.")}`,
+        ),
+      );
       if (!this.preferences.sttEnabled) {
-        lines.push(row(` ${th.fg("dim", "When STT is off, shortcut is no longer intercepted by this extension.")}`));
+        lines.push(
+          row(
+            ` ${th.fg("dim", "When STT is off, shortcut is no longer intercepted by this extension.")}`,
+          ),
+        );
       }
     }
     lines.push(th.fg("border", `╰${"─".repeat(innerWidth)}╯`));
@@ -749,7 +854,15 @@ export async function openVoiceSettingsDialog(
   onPreview: (voice: XaiTtsVoice) => Promise<VoicePreviewHandle>,
 ): Promise<VoiceSettingsDialogResult | undefined> {
   const result = await ctx.ui.custom<VoiceSettingsDialogResult | undefined>(
-    (tui, theme, _keybindings, done) => new VoiceSettingsDialog(() => tui.requestRender(), theme, done, { ...current }, voices, onPreview),
+    (tui, theme, _keybindings, done) =>
+      new VoiceSettingsDialog(
+        () => tui.requestRender(),
+        theme,
+        done,
+        { ...current },
+        voices,
+        onPreview,
+      ),
     {
       overlay: true,
       overlayOptions: {

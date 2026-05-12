@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, extname, join } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { ImageContent } from "@mariozechner/pi-ai";
+import type { ImageContent } from "@earendil-works/pi-ai";
 
 export const XAI_API_BASE = "https://api.x.ai/v1";
 export const DEFAULT_XAI_IMAGE_MODEL = "grok-imagine-image";

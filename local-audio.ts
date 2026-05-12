@@ -254,7 +254,10 @@ export async function startAudioPlayback(
   log?: XaiMediaLogger,
 ): Promise<ChildProcess> {
   const command = process.platform === "darwin" ? "afplay" : "ffplay";
-  const args = process.platform === "darwin" ? [filePath] : ["-nodisp", "-autoexit", "-loglevel", "error", filePath];
+  const args =
+    process.platform === "darwin"
+      ? [filePath]
+      : ["-nodisp", "-autoexit", "-loglevel", "error", filePath];
   log?.info?.(`[xai-voice] starting playback ${command} ${filePath}`);
   const child = spawn(command, args, {
     stdio: ["ignore", "ignore", "ignore"],

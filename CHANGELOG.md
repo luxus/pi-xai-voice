@@ -5,13 +5,16 @@ All notable changes to this project will be documented in this file.
 ## Current
 
 ### Added
+
 - Exported `piVoiceAdapterV1` from `voice-adapter.ts` so other Pi extensions can use `pi-xai-voice` as a code-level STT/TTS backend. The adapter reports xAI tag support and exposes the constrained speech-tag allowlist.
+- Added `pi-xai-voice`, `pi-xai-voice-stt`, and `pi-xai-voice-tts` binaries that wrap the adapter for command-template integrations such as pi-telegram's Handler Bus.
 
 ## [0.1.0] - 2026-04-20
 
 Initial release candidate.
 
 ### Added
+
 - xAI voice tools for TTS, STT, voice catalog, realtime client secret, realtime text-turn smoke test, and health check.
 - Pi commands: `/xai-speak`, `/xai-record`, `/xai-voice-settings`, `/xai-voice-health`.
 - Editor voice shortcut with configurable shortcut and mode (`push-to-talk` or `toggle`).
@@ -25,11 +28,13 @@ Initial release candidate.
 - In-dialog voice preview playback from settings UI.
 
 ### Changed
+
 - Default editor shortcut set to `Alt+M`.
 - Listening widget shown above editor during recording.
 - Live transcript preview written directly into editor during recording.
 
 ### Fixed
+
 - Removed double-keypress behavior caused by key release handling in editor integration.
 - Removed noisy debug output from normal operation; debug logs now gated behind `XAI_VOICE_DEBUG=1`.
 - Final transcript now cleanly replaces live preview in editor.
@@ -37,5 +42,6 @@ Initial release candidate.
 - Voice `una` accepted from API voice catalog.
 
 ### Notes
+
 - `realtime_voice_text_turn` is smoke-test only. True live microphone streaming is not part of this release.
 - No automated test suite yet; current verification is typecheck, lint, smoke tests, and manual TUI validation.

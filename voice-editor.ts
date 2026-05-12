@@ -1,5 +1,5 @@
-import { CustomEditor } from "@mariozechner/pi-coding-agent";
-import { Key, isKeyRelease, matchesKey } from "@mariozechner/pi-tui";
+import { CustomEditor } from "@earendil-works/pi-coding-agent";
+import { Key, isKeyRelease, matchesKey } from "@earendil-works/pi-tui";
 import type { VoiceShortcutMode } from "./voice-settings.ts";
 
 export const VOICE_PUSH_TO_TALK_KEY = Key.alt("m");

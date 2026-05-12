@@ -163,14 +163,16 @@ export interface RealtimeVoiceTextTurnResult {
 }
 
 interface TtsVoicesApiResult {
-  voices?: Array<Record<string, unknown> & {
-    voice_id?: string;
-    name?: string;
-    tone?: string;
-    description?: string;
-    preview_url?: string;
-    sample_url?: string;
-  }>;
+  voices?: Array<
+    Record<string, unknown> & {
+      voice_id?: string;
+      name?: string;
+      tone?: string;
+      description?: string;
+      preview_url?: string;
+      sample_url?: string;
+    }
+  >;
 }
 
 interface SpeechToTextApiResult {
@@ -265,7 +267,10 @@ function normalizeVoiceId(value: string | undefined): string {
   return normalized;
 }
 
-function normalizeLanguage(value: string | undefined, fallback = DEFAULT_XAI_VOICE_LANGUAGE): string {
+function normalizeLanguage(
+  value: string | undefined,
+  fallback = DEFAULT_XAI_VOICE_LANGUAGE,
+): string {
   const normalized = value?.trim();
   return normalized || fallback;
 }
@@ -547,7 +552,11 @@ export async function listTextToSpeechVoicesWithXai(
 ): Promise<ListTextToSpeechVoicesResult> {
   const client = coerceXaiClient(clientOrApiKey, log);
   assertApiKey(client.apiKey);
-  const result = await client.fetchJson<TtsVoicesApiResult>(TTS_VOICES_ENDPOINT, { method: "GET" }, log);
+  const result = await client.fetchJson<TtsVoicesApiResult>(
+    TTS_VOICES_ENDPOINT,
+    { method: "GET" },
+    log,
+  );
 
   const voices: XaiTtsVoice[] = [];
   for (const voice of result.voices ?? []) {
@@ -563,10 +572,7 @@ export async function listTextToSpeechVoicesWithXai(
           : typeof voice.gender === "string"
             ? voice.gender.trim() || undefined
             : documented?.type,
-      tone:
-        typeof voice.tone === "string"
-          ? voice.tone.trim() || undefined
-          : documented?.tone,
+      tone: typeof voice.tone === "string" ? voice.tone.trim() || undefined : documented?.tone,
       description:
         typeof voice.description === "string" ? voice.description.trim() || undefined : undefined,
       previewUrl:
@@ -610,7 +616,8 @@ export async function speechToTextWithXai(
   const format = params.format === true;
   const multichannel = params.multichannel === true;
   const diarize = params.diarize === true;
-  const channels = params.channels === undefined ? undefined : normalizePositiveInt(params.channels, "channels");
+  const channels =
+    params.channels === undefined ? undefined : normalizePositiveInt(params.channels, "channels");
 
   if (format && !language) {
     throw new Error("language is required when format=true");
@@ -722,7 +729,8 @@ export async function realtimeVoiceTextTurnWithXai(
   const text = assertPrompt(params.text);
   const voice = normalizeVoiceId(params.voice);
   const sampleRate = normalizeSampleRate(params.sampleRate) || 24_000;
-  const timeoutMs = normalizePositiveInt(params.timeoutMs, "timeoutMs") || DEFAULT_REALTIME_TIMEOUT_MS;
+  const timeoutMs =
+    normalizePositiveInt(params.timeoutMs, "timeoutMs") || DEFAULT_REALTIME_TIMEOUT_MS;
 
   const secretResult = await createRealtimeClientSecretWithXai(
     client,
@@ -856,7 +864,9 @@ export async function realtimeVoiceTextTurnWithXai(
             break;
           }
           case "error": {
-            fail(new Error(typeof event.message === "string" ? event.message : "xAI realtime error"));
+            fail(
+              new Error(typeof event.message === "string" ? event.message : "xAI realtime error"),
+            );
             break;
           }
           default:

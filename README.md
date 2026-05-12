@@ -25,6 +25,7 @@ This package is published to npm using **OIDC trust via GitHub Actions** with **
 - Trust established: `luxus/pi-xai-voice` repository, `publish.yml` workflow only
 
 To trigger a release:
+
 1. Bump version in `package.json`
 2. Push to main
 3. Run the [Publish workflow](https://github.com/luxus/pi-xai-voice/actions/workflows/publish.yml) manually with desired dist-tag (`latest`, `next`, etc.)
@@ -38,10 +39,12 @@ The original motivation for this project was not “build every possible voice f
 For that use case, voice often feels much more natural than typing. Talking to a bot is faster, lower friction, and more conversational than constantly writing messages by hand. Once STT and TTS become good enough on price and latency, voice stops being a gimmick and starts feeling like the right interface.
 
 This repository packages that idea in two layers:
+
 - a reusable xAI voice layer for STT, TTS, voice listing, and realtime helpers
 - Pi integrations on top, so the same APIs can also be used directly inside the editor
 
 The Pi-specific features exist because the core voice plumbing was already useful and easy to expose here as well:
+
 - fast voice input/output loop directly in the editor
 - local playback and local mic capture for low-friction workflow
 - configurable live transcript polling so you can trade responsiveness against cost
@@ -52,6 +55,7 @@ So the short version is: the main reason for this project is voice-first bot usa
 A concrete downstream target for this work is [`luxus/pi-telegram`](https://github.com/luxus/pi-telegram). That project builds on [`llblab/pi-telegram`](https://github.com/llblab/pi-telegram), which itself is a fork of [`badlogic/pi-telegram`](https://github.com/badlogic/pi-telegram).
 
 In practice, that Telegram add-on is where the voice-first idea becomes especially compelling. It turns the bot into something closer to a spoken assistant than a text-only chat. Through that integration, you can use this voice layer to:
+
 - switch the xAI voice/model used for spoken replies
 - run a continuous voice mode where voice messages can trigger voice replies
 - receive direct spoken answers as Telegram voice messages
@@ -79,6 +83,7 @@ At the moment, cloning and adapting projects is often faster than waiting for up
 - `text_to_speech` — unary `/v1/tts`, saves audio to temp file, optional local playback with `play: true`; remote-chat bridges can attach the returned `audioPath` with their own delivery tool
 - `list_tts_voices` — list available xAI voices
 - `speech_to_text` — unary `/v1/stt` from local file or remote URL, including local voice/audio files forwarded by bridge extensions such as pi-telegram
+- `pi-xai-voice-stt` / `pi-xai-voice-tts` — command-template friendly CLI wrappers around the adapter for bridge integrations such as pi-telegram
 - `create_realtime_voice_client_secret` — mint short-lived browser/mobile token for `/v1/realtime`
 - `realtime_voice_text_turn` — one-shot text roundtrip over `/v1/realtime`, saves returned PCM as WAV
 - `check_xai_voice_health` — verify auth, base URL, defaults, visible models
@@ -135,6 +140,19 @@ Config lookup order:
 2. `./.pi/settings.json`
 3. `~/.pi/agent/settings.json`
 
+## pi-telegram Integration
+
+Zero-config voice replies when [`pi-telegram`](https://github.com/luxus/pi-telegram) is installed. The extension automatically registers a voice outbound handler with pi-telegram on load — no manual `telegram.json` handler config needed.
+
+What happens automatically:
+- Voice reply toggle appears in Telegram settings menu (`/settings`)
+- TTS voice selector appears in Telegram settings menu
+- Speech tag amount selector appears in Telegram settings menu
+- When voice replies are enabled, the LLM gets guidance to use `<!-- telegram_voice ... -->` markup
+- pi-telegram extracts the markup, runs TTS via the CLI, converts to OGG/Opus, and sends as a voice message
+
+Requires pi-telegram with `registerTelegramOutboundHandler` support (commit `f897bce` or later). Falls back silently if pi-telegram is older or not installed.
+
 ## Notes
 
 - xAI voice docs currently expose fixed TTS/STT/realtime endpoints — no request-level model selector used here.
@@ -161,6 +179,39 @@ const client = new XaiClient({ apiKey, baseUrl: config.xai.baseUrl });
 const health = await client.checkHealth();
 ```
 
+## Handler Bus CLI
+
+`pi-xai-voice` also exposes command-template friendly binaries for bridge integrations that prefer process boundaries over code imports:
+
+```bash
+pi-xai-voice-stt --file voice.ogg --lang auto
+printf 'Hello [pause] world' | pi-xai-voice-tts --voice eve --lang en --write-media reply.mp3
+```
+
+For `pi-telegram`, use these commands through `telegram.json` handler-bus config:
+
+```json
+{
+  "inboundHandlers": [
+    {
+      "type": "voice",
+      "template": "pi-xai-voice-stt --file {file} --lang {lang=auto}"
+    }
+  ],
+  "outboundHandlers": [
+    {
+      "type": "voice",
+      "template": [
+        "pi-xai-voice-tts --voice {voice=eve} --lang {lang=auto} --write-media {mp3}",
+        "ffmpeg -y -i {mp3} -c:a libopus -b:a 32k -ar 16000 -ac 1 -vbr on {ogg}"
+      ],
+      "output": "ogg"
+    }
+  ]
+}
+```
+
+The TTS command reads stdin when `--text` is omitted, so it composes with pi-telegram's outbound voice pipeline without provider-specific code in pi-telegram.
 
 ## Adapter API
 
@@ -184,6 +235,6 @@ if (piVoiceAdapterV1.isAvailable()) {
 ## Dev
 
 ```bash
-bun install
-bunx tsgo -p tsconfig.json --noEmit
+npm install
+npm run typecheck
 ```
