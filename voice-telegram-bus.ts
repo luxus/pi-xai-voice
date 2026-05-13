@@ -4,6 +4,8 @@
  * Zero-coupling: reads/writes globalThis registries created by pi-telegram.
  */
 
+import { spawn } from "node:child_process";
+import { unlink } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { piVoiceAdapterV1 } from "./voice-adapter.ts";
@@ -88,6 +90,46 @@ export function setVoiceConfig(partial: Partial<PiTelegramVoiceConfig>): void {
  * The handler receives TTS text + options and returns an OGG/Opus file path.
  * Re-registers on every call — pi-telegram overwrites the previous handler.
  */
+
+async function runFfmpeg(inputPath: string, outputPath: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      "ffmpeg",
+      [
+        "-y",
+        "-i",
+        inputPath,
+        "-c:a",
+        "libopus",
+        "-b:a",
+        "32k",
+        "-ar",
+        "16000",
+        "-ac",
+        "1",
+        "-vbr",
+        "on",
+        outputPath,
+      ],
+      { stdio: "pipe" },
+    );
+
+    let stderrData = "";
+    child.stderr.on("data", (data: Buffer) => {
+      stderrData += data.toString();
+    });
+
+    child.on("close", (code: number | null) => {
+      if (code === 0) resolve();
+      else reject(new Error(`ffmpeg exited ${code}: ${stderrData.trim()}`));
+    });
+
+    child.on("error", (error: Error) => {
+      reject(new Error(`ffmpeg spawn failed: ${error.message}`));
+    });
+  });
+}
+
 export async function registerXaiVoiceTelegramHandler(): Promise<void> {
   try {
     const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -100,14 +142,31 @@ export async function registerXaiVoiceTelegramHandler(): Promise<void> {
         const voiceId = config.defaultVoice;
         const lang = options?.lang || config.defaultLanguage;
 
-        // Generate TTS audio via xAI (returns MP3, Telegram sendVoice accepts it)
+        console.error(`[xai-voice-provider] synthesize start voice=${voiceId} lang=${lang}`);
+
         const result = await piVoiceAdapterV1.synthesize({
           text,
           voiceId,
           language: lang,
         });
 
-        return result.filePath;
+        console.error(`[xai-voice-provider] synthesize complete: ${result.filePath}`);
+
+        // Convert MP3 → OGG/Opus (workaround for pi-telegram ffmpeg bug)
+        const oggPath = result.filePath.replace(/\.mp3$/i, ".voice.ogg");
+        try {
+          console.error(`[xai-voice-provider] ffmpeg start: ${result.filePath} → ${oggPath}`);
+          await runFfmpeg(result.filePath, oggPath);
+          console.error(`[xai-voice-provider] ffmpeg complete: ${oggPath}`);
+
+          await unlink(result.filePath);
+          console.error(`[xai-voice-provider] cleanup mp3: ${result.filePath}`);
+
+          return oggPath;
+        } catch (err) {
+          console.error(`[xai-voice-provider] ffmpeg failed, falling back to mp3:`, err);
+          return result.filePath;
+        }
       },
       { id: "xai" },
     );
