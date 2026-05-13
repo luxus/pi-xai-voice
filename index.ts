@@ -1018,6 +1018,7 @@ const setVoiceIdTool = defineTool({
     voiceId: Type.String({
       description:
         "Voice ID to set as default. Can be any xAI voice identifier (e.g., 'coral', 'alloy', 'nlbqfwie').",
+      minLength: 1,
     }),
   }),
   async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
