@@ -9,6 +9,17 @@ import { fileURLToPath } from "node:url";
 import { piVoiceAdapterV1 } from "./voice-adapter.ts";
 import { XAI_VOICE_IDS } from "./xai-voice.ts";
 
+// ─── Voice Descriptions ──────────────────────────────────────────────────────
+
+const VOICE_DESCRIPTIONS: Record<string, string> = {
+  eve: "Energetic, upbeat — engaging and enthusiastic",
+  ara: "Warm, friendly — balanced and conversational",
+  rex: "Confident, clear — professional and articulate",
+  sal: "Smooth, balanced — versatile for any context",
+  leo: "Authoritative, strong — commanding and decisive",
+  una: "Bright, expressive — vivid and dynamic",
+};
+
 // ─── Shared Config ───────────────────────────────────────────────────────────
 
 const VOICE_CONFIG_KEY = "__piTelegramVoiceConfig__" as const;
@@ -43,9 +54,9 @@ function migrateReplyMode(
   value: string | undefined,
 ): PiTelegramVoiceConfig["replyMode"] | undefined {
   if (value === "mirror" || value === "voice" || value === "manual") return value;
-  if (value === "mirror") return "mirror";
-  if (value === "voice") return "voice";
-  if (value === "manual") return "manual";
+  if (value === "voice-received") return "mirror";
+  if (value === "always") return "voice";
+  if (value === "on-request") return "manual";
   return undefined;
 }
 
@@ -131,24 +142,29 @@ export async function registerXaiVoiceTelegramSection(): Promise<void> {
     sectionDisposer?.();
     sectionDisposer = piTelegram.registerTelegramSection({
       id: "pi-xai-voice",
-      label: "🎙️ Voice (x.ai)",
+      label: "🔊 Voice (x.ai)",
       order: 10,
       render: async (ctx: any) => {
         const config = getVoiceConfig();
+        const voiceDesc = VOICE_DESCRIPTIONS[config.defaultVoice];
         return {
-          text: `<b>🎙️ Voice (x.ai)</b>\n\nReply mode: <code>${config.replyMode}</code>\nVoice: <code>${config.defaultVoice}</code>\nLanguage: <code>${config.defaultLanguage}</code>\nStyle: <code>${config.speechStyle}</code>\nTranscript: <code>${config.sendTranscript ? "on" : "off"}</code>`,
+          text: `<b>🔊 Voice (x.ai)</b>\n\n<i>Configure xAI text-to-speech settings.</i>\n\nReply mode: <code>${config.replyMode}</code>\nVoice: <code>${config.defaultVoice}</code>${voiceDesc ? ` — <i>${voiceDesc}</i>` : ""}\nLanguage: <code>${config.defaultLanguage}</code>\nStyle: <code>${config.speechStyle}</code>\nTranscript: <code>${config.sendTranscript ? "on" : "off"}</code>`,
           replyMarkup: {
             inline_keyboard: [
-              [{ text: "Reply Mode", callback_data: ctx.callbackData("replyMode") }],
-              [{ text: "Voice", callback_data: ctx.callbackData("voice") }],
-              [{ text: "Language", callback_data: ctx.callbackData("language") }],
-              [{ text: "Style", callback_data: ctx.callbackData("style") }],
+              [{ text: "📡 Reply Mode", callback_data: ctx.callbackData("replyMode") }],
+              [{ text: "🎙️ Voice", callback_data: ctx.callbackData("voice") }],
+              [{ text: "🌐 Language", callback_data: ctx.callbackData("language") }],
+              [{ text: "✨ Style", callback_data: ctx.callbackData("style") }],
               [
                 {
-                  text: `Transcript: ${config.sendTranscript ? "On" : "Off"}`,
-                  callback_data: ctx.callbackData("sendTranscript"),
+                  text: `📝 Transcript: ${config.sendTranscript ? "On" : "Off"}`,
+                  callback_data: ctx.callbackData(
+                    "sendTranscript",
+                    config.sendTranscript ? "off" : "on",
+                  ),
                 },
               ],
+              [{ text: "ℹ️ Speech Tags", callback_data: ctx.callbackData("helpTags") }],
             ],
           },
         };
@@ -157,24 +173,43 @@ export async function registerXaiVoiceTelegramSection(): Promise<void> {
         try {
           if (ctx.action === "open") {
             const config = getVoiceConfig();
+            const voiceDesc = VOICE_DESCRIPTIONS[config.defaultVoice];
             await ctx.edit({
-              text: `<b>🎙️ Voice Settings</b>\n\nReply mode: <code>${config.replyMode}</code>\nVoice: <code>${config.defaultVoice}</code>\nLanguage: <code>${config.defaultLanguage}</code>\nStyle: <code>${config.speechStyle}</code>`,
+              text: `<b>🔊 Voice (x.ai)</b>\n\n<i>Configure xAI text-to-speech settings.</i>\n\nReply mode: <code>${config.replyMode}</code>\nVoice: <code>${config.defaultVoice}</code>${voiceDesc ? ` — <i>${voiceDesc}</i>` : ""}\nLanguage: <code>${config.defaultLanguage}</code>\nStyle: <code>${config.speechStyle}</code>\nTranscript: <code>${config.sendTranscript ? "on" : "off"}</code>`,
               replyMarkup: {
                 inline_keyboard: [
-                  [{ text: "Reply Mode", callback_data: ctx.callbackData("replyMode") }],
-                  [{ text: "Voice", callback_data: ctx.callbackData("voice") }],
-                  [{ text: "Language", callback_data: ctx.callbackData("language") }],
-                  [{ text: "Style", callback_data: ctx.callbackData("style") }],
+                  [{ text: "📡 Reply Mode", callback_data: ctx.callbackData("replyMode") }],
+                  [{ text: "🎙️ Voice", callback_data: ctx.callbackData("voice") }],
+                  [{ text: "🌐 Language", callback_data: ctx.callbackData("language") }],
+                  [{ text: "✨ Style", callback_data: ctx.callbackData("style") }],
+                  [
+                    {
+                      text: `📝 Transcript: ${config.sendTranscript ? "On" : "Off"}`,
+                      callback_data: ctx.callbackData(
+                        "sendTranscript",
+                        config.sendTranscript ? "off" : "on",
+                      ),
+                    },
+                  ],
+                  [{ text: "ℹ️ Speech Tags", callback_data: ctx.callbackData("helpTags") }],
                 ],
               },
             });
             return "handled";
           }
           if (ctx.action === "replyMode") {
-            const modes: { value: PiTelegramVoiceConfig["replyMode"]; label: string }[] = [
-              { value: "mirror", label: "🎙️ Mirror (voice received)" },
-              { value: "voice", label: "🔊 Always voice" },
-              { value: "manual", label: "💬 Manual (on request)" },
+            const modes: {
+              value: PiTelegramVoiceConfig["replyMode"];
+              label: string;
+              desc: string;
+            }[] = [
+              {
+                value: "mirror",
+                label: "🔄 Mirror",
+                desc: "Reply with voice only when you send voice",
+              },
+              { value: "voice", label: "🔊 Always voice", desc: "Always reply with voice" },
+              { value: "manual", label: "✍️ Manual", desc: "Only on explicit request" },
             ];
 
             const payload = typeof ctx.payload === "string" ? ctx.payload : undefined;
@@ -184,7 +219,7 @@ export async function registerXaiVoiceTelegramSection(): Promise<void> {
 
             const config = getVoiceConfig();
             await ctx.edit({
-              text: `<b>🎙️ Reply Mode</b>\n\nCurrent: <code>${config.replyMode}</code>\n\nSelect when the bot replies with voice:`,
+              text: `<b>📡 Reply Mode</b>\n\n<i>Choose when the bot replies with voice.</i>\n\nCurrent: <code>${config.replyMode}</code>\n\n<b>🔄 Mirror</b> — reply with voice only when you send voice\n<b>🔊 Always voice</b> — always reply with voice\n<b>✍️ Manual</b> — only on explicit request`,
               replyMarkup: {
                 inline_keyboard: [
                   ...modes.map((m) => [
@@ -193,6 +228,7 @@ export async function registerXaiVoiceTelegramSection(): Promise<void> {
                       callback_data: ctx.callbackData("replyMode", m.value),
                     },
                   ]),
+                  [{ text: "⬆️ Back", callback_data: ctx.callbackData("open") }],
                 ],
               },
             });
@@ -202,31 +238,58 @@ export async function registerXaiVoiceTelegramSection(): Promise<void> {
             const voices = [...XAI_VOICE_IDS];
 
             const payload = typeof ctx.payload === "string" ? ctx.payload : undefined;
-            if (payload && voices.includes(payload)) {
+            if (payload && (voices.includes(payload) || payload.startsWith("custom:"))) {
               setVoiceConfig({ defaultVoice: payload });
             }
 
             const config = getVoiceConfig();
+            const currentDesc = VOICE_DESCRIPTIONS[config.defaultVoice];
+            const voiceButtons = voices.map((v) => [
+              {
+                text: v === config.defaultVoice ? `✅ ${v}` : v,
+                callback_data: ctx.callbackData("voice", v),
+              },
+            ]);
+            // Add custom voice hint row
+            voiceButtons.push([
+              {
+                text: "➕ Custom voice...",
+                callback_data: ctx.callbackData(
+                  "voice",
+                  "custom:" +
+                    (config.defaultVoice.startsWith("custom:") ? config.defaultVoice.slice(7) : ""),
+                ),
+              },
+            ]);
+
             await ctx.edit({
-              text: `<b>🎙️ TTS Voice</b>\n\nCurrent: <code>${config.defaultVoice}</code>`,
+              text: `<b>🎙️ TTS Voice</b>\n\n<i>Select the voice personality for speech synthesis.</i>\n\nCurrent: <code>${config.defaultVoice}</code>${currentDesc ? `\n— <i>${currentDesc}</i>` : ""}\n\n<b>Built-in voices</b>`,
               replyMarkup: {
                 inline_keyboard: [
-                  ...voices.map((v) => [
-                    {
-                      text: v === config.defaultVoice ? `✅ ${v}` : v,
-                      callback_data: ctx.callbackData("voice", v),
-                    },
-                  ]),
+                  ...voiceButtons,
+                  [{ text: "⬆️ Back", callback_data: ctx.callbackData("open") }],
                 ],
               },
             });
             return "handled";
           }
           if (ctx.action === "style") {
-            const styles: { value: PiTelegramVoiceConfig["speechStyle"]; label: string }[] = [
-              { value: "literal", label: "Literal (read as-is)" },
-              { value: "rewrite-light", label: "Light rewrite" },
-              { value: "rewrite-tags", label: "Rewrite with tags" },
+            const styles: {
+              value: PiTelegramVoiceConfig["speechStyle"];
+              label: string;
+              desc: string;
+            }[] = [
+              { value: "literal", label: "Literal", desc: "Read text exactly as written" },
+              {
+                value: "rewrite-light",
+                label: "Light rewrite",
+                desc: "Slight naturalization of text",
+              },
+              {
+                value: "rewrite-tags",
+                label: "Rewrite with tags",
+                desc: "Add speech tags for expression",
+              },
             ];
 
             const payload = typeof ctx.payload === "string" ? ctx.payload : undefined;
@@ -236,7 +299,7 @@ export async function registerXaiVoiceTelegramSection(): Promise<void> {
 
             const config = getVoiceConfig();
             await ctx.edit({
-              text: `<b>🎙️ Speech Style</b>\n\nCurrent: <code>${config.speechStyle}</code>`,
+              text: `<b>✨ Speech Style</b>\n\n<i>How should the bot speak?</i>\n\nCurrent: <code>${config.speechStyle}</code>\n\n<b>Literal</b> — read text exactly as written\n<b>Light rewrite</b> — slight naturalization of text\n<b>Rewrite with tags</b> — add speech tags for expression`,
               replyMarkup: {
                 inline_keyboard: [
                   ...styles.map((s) => [
@@ -245,6 +308,7 @@ export async function registerXaiVoiceTelegramSection(): Promise<void> {
                       callback_data: ctx.callbackData("style", s.value),
                     },
                   ]),
+                  [{ text: "⬆️ Back", callback_data: ctx.callbackData("open") }],
                 ],
               },
             });
@@ -252,7 +316,7 @@ export async function registerXaiVoiceTelegramSection(): Promise<void> {
           }
           if (ctx.action === "language") {
             const languages = [
-              { value: "auto", label: "🌐 Auto-detect" },
+              { value: "auto", label: "🔍 Auto-detect" },
               { value: "de", label: "🇩🇪 German" },
               { value: "en", label: "🇬🇧 English" },
               { value: "fr", label: "🇫🇷 French" },
@@ -279,7 +343,7 @@ export async function registerXaiVoiceTelegramSection(): Promise<void> {
 
             const config = getVoiceConfig();
             await ctx.edit({
-              text: `<b>🌐 Language</b>\n\nCurrent: <code>${config.defaultLanguage}</code>\n\nSelect TTS language:`,
+              text: `<b>🌐 Language</b>\n\n<i>Select the TTS language or use auto-detect.</i>\n\nCurrent: <code>${config.defaultLanguage}</code>`,
               replyMarkup: {
                 inline_keyboard: [
                   ...languages.map((l) => [
@@ -288,6 +352,7 @@ export async function registerXaiVoiceTelegramSection(): Promise<void> {
                       callback_data: ctx.callbackData("language", l.value),
                     },
                   ]),
+                  [{ text: "⬆️ Back", callback_data: ctx.callbackData("open") }],
                 ],
               },
             });
@@ -295,28 +360,40 @@ export async function registerXaiVoiceTelegramSection(): Promise<void> {
           }
           if (ctx.action === "sendTranscript") {
             const payload = typeof ctx.payload === "string" ? ctx.payload : undefined;
-            if (payload === "on" || payload === "off") {
-              setVoiceConfig({ sendTranscript: payload === "on" });
-            }
+            const current = getVoiceConfig().sendTranscript;
+            const next = payload === "on" || payload === "off" ? payload === "on" : !current;
+            setVoiceConfig({ sendTranscript: next });
 
             const config = getVoiceConfig();
+            const voiceDesc = VOICE_DESCRIPTIONS[config.defaultVoice];
             await ctx.edit({
-              text: `<b>📝 Transcript</b>\n\nCurrent: <code>${config.sendTranscript ? "On" : "Off"}</code>\n\nSend text transcript alongside voice message?`,
+              text: `<b>🔊 Voice (x.ai)</b>\n\n<i>Configure xAI text-to-speech settings.</i>\n\nReply mode: <code>${config.replyMode}</code>\nVoice: <code>${config.defaultVoice}</code>${voiceDesc ? ` — <i>${voiceDesc}</i>` : ""}\nLanguage: <code>${config.defaultLanguage}</code>\nStyle: <code>${config.speechStyle}</code>\nTranscript: <code>${config.sendTranscript ? "on" : "off"}</code>`,
               replyMarkup: {
                 inline_keyboard: [
+                  [{ text: "📡 Reply Mode", callback_data: ctx.callbackData("replyMode") }],
+                  [{ text: "🎙️ Voice", callback_data: ctx.callbackData("voice") }],
+                  [{ text: "🌐 Language", callback_data: ctx.callbackData("language") }],
+                  [{ text: "✨ Style", callback_data: ctx.callbackData("style") }],
                   [
                     {
-                      text: config.sendTranscript ? `✅ On` : "On",
-                      callback_data: ctx.callbackData("sendTranscript", "on"),
+                      text: `📝 Transcript: ${config.sendTranscript ? "On" : "Off"}`,
+                      callback_data: ctx.callbackData(
+                        "sendTranscript",
+                        config.sendTranscript ? "off" : "on",
+                      ),
                     },
                   ],
-                  [
-                    {
-                      text: !config.sendTranscript ? `✅ Off` : "Off",
-                      callback_data: ctx.callbackData("sendTranscript", "off"),
-                    },
-                  ],
+                  [{ text: "ℹ️ Speech Tags", callback_data: ctx.callbackData("helpTags") }],
                 ],
+              },
+            });
+            return "handled";
+          }
+          if (ctx.action === "helpTags") {
+            await ctx.edit({
+              text: `<b>🏷️ Speech Tags</b>\n\n<i>Make speech more expressive with inline tags.</i>\n\n<b>Inline tags</b> — placed at a specific point:\n• [pause] — brief pause\n• [long-pause] — longer pause\n• [laugh] — laugh\n• [sigh] — sigh\n• [gasp] — gasp\n\n<b>Wrapping tags</b> — wrap a section of text:\n• &lt;whisper&gt;text&lt;/whisper&gt; — whispered\n• &lt;slow&gt;text&lt;/slow&gt; — slower delivery\n• &lt;soft&gt;text&lt;/soft&gt; — softer volume\n• &lt;emphasis&gt;text&lt;/emphasis&gt; — emphasized\n\n<i>Example:</i> <code>So I walked in and [pause] there it was. [laugh] I honestly could not believe it! &lt;whisper&gt;It was a secret the whole time.&lt;/whisper&gt;</code>`,
+              replyMarkup: {
+                inline_keyboard: [[{ text: "⬆️ Back", callback_data: ctx.callbackData("open") }]],
               },
             });
             return "handled";
@@ -327,24 +404,29 @@ export async function registerXaiVoiceTelegramSection(): Promise<void> {
         }
       },
       settings: {
-        label: "🎙️ Voice",
-        getLabel: () => "🎙️ Voice",
+        label: "🔊 Voice (x.ai)",
+        getLabel: () => "🔊 Voice (x.ai)",
         open: async (ctx: any) => {
           const config = getVoiceConfig();
+          const voiceDesc = VOICE_DESCRIPTIONS[config.defaultVoice];
           return {
-            text: `<b>🎙️ Voice Settings</b>\n\nReply mode: <code>${config.replyMode}</code>\nVoice: <code>${config.defaultVoice}</code>\nLanguage: <code>${config.defaultLanguage}</code>\nStyle: <code>${config.speechStyle}</code>\nTranscript: <code>${config.sendTranscript ? "on" : "off"}</code>`,
+            text: `<b>🔊 Voice (x.ai)</b>\n\n<i>Configure xAI text-to-speech settings.</i>\n\nReply mode: <code>${config.replyMode}</code>\nVoice: <code>${config.defaultVoice}</code>${voiceDesc ? ` — <i>${voiceDesc}</i>` : ""}\nLanguage: <code>${config.defaultLanguage}</code>\nStyle: <code>${config.speechStyle}</code>\nTranscript: <code>${config.sendTranscript ? "on" : "off"}</code>`,
             replyMarkup: {
               inline_keyboard: [
-                [{ text: "Reply Mode", callback_data: ctx.callbackData("replyMode") }],
-                [{ text: "Voice", callback_data: ctx.callbackData("voice") }],
-                [{ text: "Language", callback_data: ctx.callbackData("language") }],
-                [{ text: "Style", callback_data: ctx.callbackData("style") }],
+                [{ text: "📡 Reply Mode", callback_data: ctx.callbackData("replyMode") }],
+                [{ text: "🎙️ Voice", callback_data: ctx.callbackData("voice") }],
+                [{ text: "🌐 Language", callback_data: ctx.callbackData("language") }],
+                [{ text: "✨ Style", callback_data: ctx.callbackData("style") }],
                 [
                   {
-                    text: `Transcript: ${config.sendTranscript ? "On" : "Off"}`,
-                    callback_data: ctx.callbackData("sendTranscript"),
+                    text: `📝 Transcript: ${config.sendTranscript ? "On" : "Off"}`,
+                    callback_data: ctx.callbackData(
+                      "sendTranscript",
+                      config.sendTranscript ? "off" : "on",
+                    ),
                   },
                 ],
+                [{ text: "ℹ️ Speech Tags", callback_data: ctx.callbackData("helpTags") }],
               ],
             },
           };
