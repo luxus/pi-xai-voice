@@ -164,7 +164,8 @@ export function resolveVoicePreferences(voiceConfig: Record<string, unknown>): V
     replyMode: isReplyMode(replyMode) ? replyMode : DEFAULT_VOICE_REPLY_MODE,
     speechStyle: isSpeechStyle(speechStyle) ? speechStyle : DEFAULT_VOICE_SPEECH_STYLE,
     defaultLanguage: defaultLanguage || DEFAULT_VOICE_DEFAULT_LANGUAGE,
-    sendTranscript: typeof sendTranscript === "boolean" ? sendTranscript : DEFAULT_VOICE_SEND_TRANSCRIPT,
+    sendTranscript:
+      typeof sendTranscript === "boolean" ? sendTranscript : DEFAULT_VOICE_SEND_TRANSCRIPT,
   };
 }
 

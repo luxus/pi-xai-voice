@@ -145,6 +145,7 @@ Config lookup order:
 Zero-config voice replies when [`pi-telegram`](https://github.com/luxus/pi-telegram) is installed. The extension automatically registers a voice outbound handler with pi-telegram on load — no manual `telegram.json` handler config needed.
 
 What happens automatically:
+
 - Voice reply toggle appears in Telegram settings menu (`/settings`)
 - TTS voice selector appears in Telegram settings menu
 - Speech tag amount selector appears in Telegram settings menu

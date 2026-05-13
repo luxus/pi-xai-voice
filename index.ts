@@ -250,7 +250,10 @@ function createRuntime(log = createLogger()): {
       tagAmount: preferences.tagAmount || DEFAULT_TAG_AMOUNT,
       replyMode: preferences.replyMode || DEFAULT_VOICE_REPLY_MODE,
       speechStyle: preferences.speechStyle || DEFAULT_VOICE_SPEECH_STYLE,
-      sendTranscript: typeof preferences.sendTranscript === "boolean" ? preferences.sendTranscript : DEFAULT_VOICE_SEND_TRANSCRIPT,
+      sendTranscript:
+        typeof preferences.sendTranscript === "boolean"
+          ? preferences.sendTranscript
+          : DEFAULT_VOICE_SEND_TRANSCRIPT,
     },
   };
 }

@@ -15,6 +15,7 @@ These rules override all other instructions when they conflict. They exist to re
 **Don't assume. Don't hide confusion. Surface tradeoffs.**
 
 Before implementing:
+
 - State your assumptions explicitly. If uncertain, ask.
 - If multiple interpretations exist, present them — don't pick silently.
 - If a simpler approach exists, say so. Push back when warranted.
@@ -37,12 +38,14 @@ Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, sim
 **Touch only what you must. Clean up only your own mess.**
 
 When editing existing code:
+
 - Don't "improve" adjacent code, comments, or formatting.
 - Don't refactor things that aren't broken.
 - Match existing style, even if you'd do it differently.
 - If you notice unrelated dead code, mention it — don't delete it.
 
 When your changes create orphans:
+
 - Remove imports/variables/functions that YOUR changes made unused.
 - Don't remove pre-existing dead code unless asked.
 
@@ -53,11 +56,13 @@ The test: Every changed line should trace directly to the user's request.
 **Define success criteria. Loop until verified.**
 
 Transform tasks into verifiable goals:
+
 - "Add validation" → "Write tests for invalid inputs, then make them pass"
 - "Fix the bug" → "Write a test that reproduces it, then make it pass"
 - "Refactor X" → "Ensure tests pass before and after"
 
 For multi-step tasks, state a brief plan:
+
 ```
 1. [Step] → verify: [check]
 2. [Step] → verify: [check]
@@ -81,6 +86,7 @@ Work from explicit instructions. If the user's request is vague, stop and clarif
 ## 6. Read Before Write
 
 Do not infer repository paths, APIs, helpers, or behavior. Confirm facts by:
+
 1. Reading files explicitly (`read`, `grep`, `find_files`).
 2. Following local project docs (AGENTS.md, README.md, docs/).
 3. Running verification commands before claiming understanding.
@@ -101,6 +107,7 @@ Do not proceed with best-guess assumptions. Surface uncertainty explicitly.
 ## 9. Require Proof, Not Confidence
 
 Confirm work with actual checks before claiming success:
+
 - Run tests (`npm test`, domain-specific suites).
 - Check logs or command output.
 - Verify file contents match intent.
@@ -109,6 +116,7 @@ Confirm work with actual checks before claiming success:
 ## 10. Compaction Recovery
 
 For long tasks, recovery state must be inspectable:
+
 - Use `git diff` to show current changes.
 - Track modified files explicitly.
 - Persist verification state.
