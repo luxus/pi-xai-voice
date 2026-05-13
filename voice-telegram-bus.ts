@@ -20,7 +20,7 @@ export function onVoiceConfigChanged(callback: (config: PiTelegramVoiceConfig) =
 }
 
 export interface PiTelegramVoiceConfig {
-  replyMode: "voice-received" | "always" | "on-request";
+  replyMode: "mirror" | "voice" | "manual";
   provider: string;
   providerOptions: Record<string, unknown>;
   defaultVoice: string;
@@ -30,7 +30,7 @@ export interface PiTelegramVoiceConfig {
 }
 
 const DEFAULT_VOICE_CONFIG: PiTelegramVoiceConfig = {
-  replyMode: "voice-received",
+  replyMode: "mirror",
   provider: "xai",
   providerOptions: {},
   defaultVoice: piVoiceAdapterV1.getDefaults().voiceId || "alloy",
@@ -39,10 +39,25 @@ const DEFAULT_VOICE_CONFIG: PiTelegramVoiceConfig = {
   sendTranscript: false,
 };
 
+function migrateReplyMode(
+  value: string | undefined,
+): PiTelegramVoiceConfig["replyMode"] | undefined {
+  if (value === "mirror" || value === "voice" || value === "manual") return value;
+  if (value === "mirror") return "mirror";
+  if (value === "voice") return "voice";
+  if (value === "manual") return "manual";
+  return undefined;
+}
+
 export function getVoiceConfig(): PiTelegramVoiceConfig {
   const existing = (globalThis as Record<string, unknown>)[VOICE_CONFIG_KEY];
   if (existing && typeof existing === "object" && existing !== null) {
-    return { ...DEFAULT_VOICE_CONFIG, ...(existing as Partial<PiTelegramVoiceConfig>) };
+    const partial = existing as Partial<PiTelegramVoiceConfig> & { replyMode?: string };
+    const migrated: Partial<PiTelegramVoiceConfig> = { ...partial };
+    if (partial.replyMode) {
+      migrated.replyMode = migrateReplyMode(partial.replyMode);
+    }
+    return { ...DEFAULT_VOICE_CONFIG, ...migrated };
   }
   (globalThis as Record<string, unknown>)[VOICE_CONFIG_KEY] = { ...DEFAULT_VOICE_CONFIG };
   return { ...DEFAULT_VOICE_CONFIG };
@@ -66,9 +81,9 @@ export async function registerXaiVoiceTelegramHandler(): Promise<void> {
   try {
     const __dirname = dirname(fileURLToPath(import.meta.url));
     const piTelegram = await import(resolve(__dirname, "../pi-telegram/lib/outbound-handlers"));
-    if (typeof piTelegram.registerTelegramOutboundHandler !== "function") return;
+    if (typeof piTelegram.registerTelegramVoiceProvider !== "function") return;
 
-    piTelegram.registerTelegramOutboundHandler("voice", async (text: any, options: any) => {
+    piTelegram.registerTelegramVoiceProvider(async (text: any, options: any) => {
       const config = getVoiceConfig();
       const voiceId = config.defaultVoice;
       const lang = options?.lang || config.defaultLanguage;
@@ -157,9 +172,9 @@ export async function registerXaiVoiceTelegramSection(): Promise<void> {
           }
           if (ctx.action === "replyMode") {
             const modes: { value: PiTelegramVoiceConfig["replyMode"]; label: string }[] = [
-              { value: "voice-received", label: "🎙️ Voice received only" },
-              { value: "always", label: "🔊 Always voice" },
-              { value: "on-request", label: "💬 On request only" },
+              { value: "mirror", label: "🎙️ Mirror (voice received)" },
+              { value: "voice", label: "🔊 Always voice" },
+              { value: "manual", label: "💬 Manual (on request)" },
             ];
 
             const payload = typeof ctx.payload === "string" ? ctx.payload : undefined;

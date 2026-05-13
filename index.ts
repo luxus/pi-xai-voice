@@ -194,7 +194,7 @@ function createRuntime(log = createLogger()): {
     liveTranscriptPollingMs: number;
     liveTranscriptGhostText: boolean;
     tagAmount: VoiceTagAmount;
-    replyMode?: "voice-received" | "always" | "on-request";
+    replyMode?: "mirror" | "voice" | "manual";
     speechStyle?: "literal" | "rewrite-light" | "rewrite-tags";
     sendTranscript?: boolean;
   };
