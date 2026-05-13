@@ -6,11 +6,6 @@
     "pi-package"
   ],
   "license": "MIT",
-  "bin": {
-    "pi-xai-voice": "./voice-cli.ts",
-    "pi-xai-voice-stt": "./voice-cli.ts",
-    "pi-xai-voice-tts": "./voice-cli.ts"
-  },
   "files": [
     "*.ts",
     "tsconfig.json",
