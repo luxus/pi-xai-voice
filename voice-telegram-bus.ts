@@ -27,9 +27,101 @@ const VOICE_DESCRIPTIONS: Record<string, string> = {
 const VOICE_CONFIG_KEY = "__piTelegramVoiceConfig__" as const;
 
 let onConfigChangeCallback: ((config: PiTelegramVoiceConfig) => void) | undefined;
+let lastVoiceTranscript: string | undefined;
 
 export function onVoiceConfigChanged(callback: (config: PiTelegramVoiceConfig) => void): void {
   onConfigChangeCallback = callback;
+}
+
+export function setLastVoiceTranscript(text: string): void {
+  lastVoiceTranscript = text;
+}
+
+export function getLastVoiceTranscript(): string | undefined {
+  return lastVoiceTranscript;
+}
+
+// ─── Text Rewriting for Speech ─────────────────────────────────────────────
+
+function rewriteLight(text: string): string {
+  return text
+    .replace(/\bdon't\b/gi, "don't")
+    .replace(/\bdo not\b/gi, "don't")
+    .replace(/\bcan't\b/gi, "can't")
+    .replace(/\bcannot\b/gi, "can't")
+    .replace(/\bwon't\b/gi, "won't")
+    .replace(/\bwill not\b/gi, "won't")
+    .replace(/\bit's\b/gi, "it's")
+    .replace(/\bit is\b/gi, "it's")
+    .replace(/\bi'm\b/gi, "I'm")
+    .replace(/\bi am\b/gi, "I'm")
+    .replace(/\bhe's\b/gi, "he's")
+    .replace(/\bhe is\b/gi, "he's")
+    .replace(/\bshe's\b/gi, "she's")
+    .replace(/\bshe is\b/gi, "she's")
+    .replace(/\bthat's\b/gi, "that's")
+    .replace(/\bthat is\b/gi, "that's")
+    .replace(/\bthere's\b/gi, "there's")
+    .replace(/\bthere is\b/gi, "there's")
+    .replace(/\bwhat's\b/gi, "what's")
+    .replace(/\bwhat is\b/gi, "what's")
+    .replace(/\bhow's\b/gi, "how's")
+    .replace(/\bhow is\b/gi, "how's")
+    .replace(/\bhere's\b/gi, "here's")
+    .replace(/\bhere is\b/gi, "here's")
+    .replace(/\bwhere's\b/gi, "where's")
+    .replace(/\bwhere is\b/gi, "where's")
+    .replace(/\bwho's\b/gi, "who's")
+    .replace(/\bwho is\b/gi, "who's");
+}
+
+function addSpeechTags(text: string): string {
+  return (
+    text
+      // Add pauses after sentence-ending punctuation
+      .replace(/([.!?])\s+(?=[A-Z])/g, "$1 [pause] ")
+      // Add long pause for ellipsis
+      .replace(/\.\.\./g, "[long-pause]")
+      // Add sigh for negative statements
+      .replace(/\b(sad|bad|sorry|unfortunately|disappointed)\b/gi, "[sigh] $1")
+      // Add laugh for positive/humorous cues
+      .replace(/\b(haha|lol|funny|joke|hilarious)\b/gi, "[laugh] $1")
+      // Add gasp for surprise
+      .replace(/\b(wow|amazing|incredible|shocking|surprising)\b/gi, "[gasp] $1")
+      // Add emphasis for key phrases
+      .replace(
+        /\b(important|crucial|essential|critical|must|need to)\b/gi,
+        "<emphasis>$1</emphasis>",
+      )
+      // Whisper for secrets or private thoughts
+      .replace(/\b(secret|private|confidential|between us)\b/gi, "<whisper>$1</whisper>")
+      // Slow for important final statements
+      .replace(/\b(in conclusion|to summarize|finally|in short)\b/gi, "<slow>$1</slow>")
+      // Clean up double spaces
+      .replace(/\s+/g, " ")
+      .trim()
+  );
+}
+
+export function stripSpeechTags(text: string): string {
+  return text
+    .replace(/\[(\w+(?:-\w+)?)\]/g, "") // [pause], [long-pause], [laugh], etc.
+    .replace(/<(\w+)>(.*?)<\/\1>/g, "$2") // <whisper>text</whisper>, <emphasis>text</emphasis>
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function rewriteForSpeech(text: string, style: PiTelegramVoiceConfig["speechStyle"]): string {
+  switch (style) {
+    case "literal":
+      return text;
+    case "rewrite-light":
+      return rewriteLight(text);
+    case "rewrite-tags":
+      return addSpeechTags(rewriteLight(text));
+    default:
+      return text;
+  }
 }
 
 export interface PiTelegramVoiceConfig {
@@ -141,18 +233,26 @@ export async function registerXaiVoiceTelegramHandler(): Promise<void> {
         const config = getVoiceConfig();
         const voiceId = config.defaultVoice;
         const lang = options?.lang || config.defaultLanguage;
+        const speechStyle = config.speechStyle;
 
-        console.error(`[xai-voice-provider] synthesize start voice=${voiceId} lang=${lang}`);
+        // Rewrite text for better speech delivery based on speech style
+        const rewrittenText = rewriteForSpeech(text, speechStyle);
+        const cleanText = stripSpeechTags(rewrittenText);
+        setLastVoiceTranscript(cleanText);
+
+        console.error(
+          `[xai-voice-provider] synthesize start voice=${voiceId} lang=${lang} style=${speechStyle}`,
+        );
 
         const result = await piVoiceAdapterV1.synthesize({
-          text,
+          text: rewrittenText,
           voiceId,
           language: lang,
         });
 
         console.error(`[xai-voice-provider] synthesize complete: ${result.filePath}`);
 
-        // Convert MP3 → OGG/Opus (workaround for pi-telegram ffmpeg bug)
+        // Convert MP3 → OGG/Opus
         const oggPath = result.filePath.replace(/\.mp3$/i, ".voice.ogg");
         try {
           console.error(`[xai-voice-provider] ffmpeg start: ${result.filePath} → ${oggPath}`);
