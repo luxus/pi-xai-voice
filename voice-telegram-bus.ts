@@ -83,7 +83,6 @@ export async function registerXaiVoiceTelegramHandler(): Promise<void> {
       return result.filePath;
     });
 
-    console.log("pi-xai-voice voice handler registered with pi-telegram");
   } catch {
     // pi-telegram not available — voice works standalone without it.
     // Silently skip. No dependency on pi-telegram.
@@ -310,7 +309,6 @@ export async function registerXaiVoiceTelegramSection(): Promise<void> {
       },
     });
 
-    console.log("pi-xai-voice voice section registered with pi-telegram");
   } catch {
     // pi-telegram not available — voice works standalone without it.
     // Silently skip. No dependency on pi-telegram.
