@@ -94,20 +94,23 @@ export async function registerXaiVoiceTelegramHandler(): Promise<void> {
     const piTelegram = await import(resolve(__dirname, "../pi-telegram/lib/outbound-handlers"));
     if (typeof piTelegram.registerTelegramVoiceProvider !== "function") return;
 
-    piTelegram.registerTelegramVoiceProvider(async (text: any, options: any) => {
-      const config = getVoiceConfig();
-      const voiceId = config.defaultVoice;
-      const lang = options?.lang || config.defaultLanguage;
+    piTelegram.registerTelegramVoiceProvider(
+      async (text: any, options: any) => {
+        const config = getVoiceConfig();
+        const voiceId = config.defaultVoice;
+        const lang = options?.lang || config.defaultLanguage;
 
-      // Generate TTS audio via xAI (returns MP3, Telegram sendVoice accepts it)
-      const result = await piVoiceAdapterV1.synthesize({
-        text,
-        voiceId,
-        language: lang,
-      });
+        // Generate TTS audio via xAI (returns MP3, Telegram sendVoice accepts it)
+        const result = await piVoiceAdapterV1.synthesize({
+          text,
+          voiceId,
+          language: lang,
+        });
 
-      return result.filePath;
-    });
+        return result.filePath;
+      },
+      { id: "xai" },
+    );
   } catch {
     // pi-telegram not available — voice works standalone without it.
     // Silently skip. No dependency on pi-telegram.
