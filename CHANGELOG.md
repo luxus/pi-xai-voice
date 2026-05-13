@@ -2,12 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
-## Current
+## [0.2.0] - 2026-05-12
 
 ### Added
 
-- Exported `piVoiceAdapterV1` from `voice-adapter.ts` so other Pi extensions can use `pi-xai-voice` as a code-level STT/TTS backend. The adapter reports xAI tag support and exposes the constrained speech-tag allowlist.
-- Added `pi-xai-voice`, `pi-xai-voice-stt`, and `pi-xai-voice-tts` binaries that wrap the adapter for command-template integrations such as pi-telegram's Handler Bus.
+- pi-telegram voice integration: zero-config handler registration and Telegram section menu (`/menu` → 🎙️ Voice (x.ai)).
+- Telegram voice settings menu with reply mode, voice, language, style, and `sendTranscript` toggle.
+- Voice settings persistence via Pi settings file (`xai.voice` config namespace).
+- Session resume handling with disposer and periodic re-registration for pi-telegram.
+- Deduplication of voice section registration via registry check.
+- Voice (x.ai) labeling in Telegram menus.
+- Matt Pocock skills setup: `docs/agents/` with issue tracker, triage labels, and domain docs.
+- Exported `piVoiceAdapterV1` from `voice-adapter.ts` so other Pi extensions can use `pi-xai-voice` as a code-level STT/TTS backend.
+- Added `pi-xai-voice`, `pi-xai-voice-stt`, and `pi-xai-voice-tts` binaries for command-template integrations.
+
+### Changed
+
+- Migrated from Bun to npm. Updated Pi packages to 0.74.0.
+- Adopted AGENTS.md structure from pi-telegram with meta-protocol principles.
+
+### Fixed
+
+- Removed debug `console.log` statements from voice-telegram-bus.
+- Settings label now shows "🎙️ Voice (x.ai)" instead of "Voice settings" with status dots.
+- Voice replies no longer show text drafts in Telegram during generation (fixed upstream in pi-telegram).
+
+## Current
 
 ## [0.1.0] - 2026-04-20
 
