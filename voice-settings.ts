@@ -98,7 +98,7 @@ function getBoolean(record: Record<string, unknown>, key: string): boolean | und
 }
 
 function isVoiceId(value: string | undefined): value is string {
-  return Boolean(value && XAI_VOICE_IDS.has(value));
+  return Boolean(value && typeof value === "string" && value.trim().length >= 2);
 }
 
 function isShortcutMode(value: string | undefined): value is VoiceShortcutMode {

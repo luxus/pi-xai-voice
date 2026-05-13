@@ -238,7 +238,7 @@ export async function registerXaiVoiceTelegramSection(): Promise<void> {
             const voices = [...XAI_VOICE_IDS];
 
             const payload = typeof ctx.payload === "string" ? ctx.payload : undefined;
-            if (payload && (voices.includes(payload) || payload.startsWith("custom:"))) {
+            if (payload && payload.trim().length >= 2) {
               setVoiceConfig({ defaultVoice: payload });
             }
 
@@ -250,20 +250,18 @@ export async function registerXaiVoiceTelegramSection(): Promise<void> {
                 callback_data: ctx.callbackData("voice", v),
               },
             ]);
-            // Add custom voice hint row
-            voiceButtons.push([
-              {
-                text: "➕ Custom voice...",
-                callback_data: ctx.callbackData(
-                  "voice",
-                  "custom:" +
-                    (config.defaultVoice.startsWith("custom:") ? config.defaultVoice.slice(7) : ""),
-                ),
-              },
-            ]);
+            // Show custom voice if one is set (not in built-in list)
+            if (!voices.includes(config.defaultVoice)) {
+              voiceButtons.push([
+                {
+                  text: `🎤 ${config.defaultVoice}`,
+                  callback_data: ctx.callbackData("voice", config.defaultVoice),
+                },
+              ]);
+            }
 
             await ctx.edit({
-              text: `<b>🎙️ TTS Voice</b>\n\n<i>Select the voice personality for speech synthesis.</i>\n\nCurrent: <code>${config.defaultVoice}</code>${currentDesc ? `\n— <i>${currentDesc}</i>` : ""}\n\n<b>Built-in voices</b>`,
+              text: `<b>🎙️ TTS Voice</b>\n\n<i>Select the voice personality for speech synthesis.</i>\n\nCurrent: <code>${config.defaultVoice}</code>${currentDesc ? `\n— <i>${currentDesc}</i>` : ""}\n\n<b>Built-in voices</b>\n\n<i>Custom voices: set xai.voice.defaultVoice in .pi/settings.json</i>`,
               replyMarkup: {
                 inline_keyboard: [
                   ...voiceButtons,

@@ -260,11 +260,7 @@ async function requestWithAuth(
 }
 
 function normalizeVoiceId(value: string | undefined): string {
-  const normalized = value?.trim().toLowerCase() || DEFAULT_XAI_VOICE_ID;
-  if (!XAI_VOICE_IDS.has(normalized)) {
-    throw new Error(`Invalid voiceId: ${normalized}`);
-  }
-  return normalized;
+  return value?.trim().toLowerCase() || DEFAULT_XAI_VOICE_ID;
 }
 
 function normalizeLanguage(
