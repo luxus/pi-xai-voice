@@ -1008,6 +1008,27 @@ const checkXaiVoiceHealthTool = defineTool({
   },
 });
 
+const setVoiceIdTool = defineTool({
+  name: "set_voice_id",
+  label: "set_voice_id",
+  description:
+    "Set the default xAI voice ID for TTS output. Any non-empty string is accepted as a custom voice ID.",
+  promptSnippet: "set_voice_id(voiceId) -> set default xAI TTS voice",
+  parameters: Type.Object({
+    voiceId: Type.String({
+      description:
+        "Voice ID to set as default. Can be any xAI voice identifier (e.g., 'coral', 'alloy', 'nlbqfwie').",
+    }),
+  }),
+  async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+    setVoiceConfig({ defaultVoice: params.voiceId });
+    return {
+      content: [{ type: "text", text: `Default voice set to: ${params.voiceId}` }],
+      details: undefined,
+    };
+  },
+});
+
 export default function piXaiVoiceExtension(pi: ExtensionAPI): void {
   function registerVoiceTelegramBus(): void {
     // Register voice outbound handler (function-based TTS backend).
@@ -1079,6 +1100,7 @@ export default function piXaiVoiceExtension(pi: ExtensionAPI): void {
   pi.registerTool(createRealtimeClientSecretTool);
   pi.registerTool(realtimeVoiceTextTurnTool);
   pi.registerTool(checkXaiVoiceHealthTool);
+  pi.registerTool(setVoiceIdTool);
 
   pi.registerCommand("xai-speak", {
     description: "Speak provided text, current editor text, or last assistant message",

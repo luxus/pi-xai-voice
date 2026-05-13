@@ -261,14 +261,26 @@ export async function registerXaiVoiceTelegramSection(): Promise<void> {
             }
 
             await ctx.edit({
-              text: `<b>🎙️ TTS Voice</b>\n\n<i>Select the voice personality for speech synthesis.</i>\n\nCurrent: <code>${config.defaultVoice}</code>${currentDesc ? `\n— <i>${currentDesc}</i>` : ""}\n\n<b>Built-in voices</b>\n\n<i>Custom voices: set xai.voice.defaultVoice in .pi/settings.json</i>`,
+              text: `<b>🎙️ TTS Voice</b>\n\n<i>Select the voice personality for speech synthesis.</i>\n\nCurrent: <code>${config.defaultVoice}</code>${currentDesc ? `\n— <i>${currentDesc}</i>` : ""}\n\n<b>Built-in voices</b>`,
               replyMarkup: {
                 inline_keyboard: [
                   ...voiceButtons,
+                  [
+                    {
+                      text: "➕ Set custom voice...",
+                      callback_data: ctx.callbackData("customVoice"),
+                    },
+                  ],
                   [{ text: "⬆️ Back", callback_data: ctx.callbackData("open") }],
                 ],
               },
             });
+            return "handled";
+          }
+          if (ctx.action === "customVoice") {
+            await ctx.enqueuePrompt(
+              "The user wants to set a custom xAI voice ID. Ask them for the voice ID they want to use. Any non-empty string is valid. Once they provide it, call set_voice_id with that ID.",
+            );
             return "handled";
           }
           if (ctx.action === "style") {
