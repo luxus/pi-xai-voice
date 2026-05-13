@@ -262,10 +262,10 @@ export async function registerXaiVoiceTelegramHandler(): Promise<void> {
           await unlink(result.filePath);
           console.error(`[xai-voice-provider] cleanup mp3: ${result.filePath}`);
 
-          return oggPath;
+          return { audioPath: oggPath, transcriptText: cleanText };
         } catch (err) {
           console.error(`[xai-voice-provider] ffmpeg failed, falling back to mp3:`, err);
-          return result.filePath;
+          return { audioPath: result.filePath, transcriptText: cleanText };
         }
       },
       { id: "xai" },
