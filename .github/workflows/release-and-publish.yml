@@ -66,6 +66,4 @@ jobs:
             --generate-notes
 
       - name: Publish to npm
-        run: npm publish --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --provenance --access public

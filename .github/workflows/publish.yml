@@ -30,4 +30,4 @@ jobs:
             echo "$name@$version already exists on npm; skipping publish."
             exit 0
           fi
-          npm publish
+          npm publish --provenance --access public
