@@ -4,12 +4,41 @@
  * Zero-coupling: reads/writes globalThis registries created by pi-telegram.
  */
 
+import { appendFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { unlink } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { piVoiceAdapterV1 } from "./voice-adapter.ts";
 import { XAI_VOICE_IDS } from "./xai-voice.ts";
+
+// ─── Debug Logger ────────────────────────────────────────────────────────────
+
+const DEBUG_LOG_PATH = "/tmp/pi-xai-voice-debug.log";
+
+function debugLog(tag: string, message: string, extra?: unknown): void {
+  const timestamp = new Date().toISOString();
+  const extraStr = extra !== undefined ? ` ${JSON.stringify(extra)}` : "";
+  const line = `[${timestamp}] [${tag}] ${message}${extraStr}\n`;
+  try {
+    appendFileSync(DEBUG_LOG_PATH, line);
+  } catch {
+    // Ignore write errors
+  }
+  // Also try recordRuntimeEvent if available
+  try {
+    const recordEvent = (globalThis as Record<string, unknown>).__piTelegramRecordEvent__;
+    if (typeof recordEvent === "function") {
+      (recordEvent as (category: string, message: string, details?: unknown) => void)(
+        tag,
+        message,
+        extra,
+      );
+    }
+  } catch {
+    // Ignore
+  }
+}
 
 // ─── Voice Descriptions ──────────────────────────────────────────────────────
 
@@ -228,12 +257,13 @@ export async function registerXaiVoiceTelegramHandler(): Promise<void> {
     const piTelegram = await import(resolve(__dirname, "../pi-telegram/lib/outbound-handlers"));
     if (typeof piTelegram.registerTelegramVoiceProvider !== "function") return;
 
-    console.error(`[xai-voice] registering provider with id=xai`);
+    debugLog("xai-voice", "registering provider with id=xai");
     piTelegram.registerTelegramVoiceProvider(
       async (text: any, options: any) => {
         try {
-          console.error(
-            `[xai-voice] PROVIDER CALLED text="${text?.substring?.(0, 60) ?? text}" lang=${options?.lang}`,
+          debugLog(
+            "xai-voice",
+            `PROVIDER CALLED text="${text?.substring?.(0, 60) ?? text}" lang=${options?.lang}`,
           );
 
           const config = getVoiceConfig();
@@ -241,20 +271,19 @@ export async function registerXaiVoiceTelegramHandler(): Promise<void> {
           const lang = options?.lang || config.defaultLanguage;
           const speechStyle = config.speechStyle;
 
-          console.error(
-            `[xai-voice] config loaded voice=${voiceId} lang=${lang} style=${speechStyle}`,
-          );
+          debugLog("xai-voice", `config loaded voice=${voiceId} lang=${lang} style=${speechStyle}`);
 
           // Rewrite text for better speech delivery based on speech style
           const rewrittenText = rewriteForSpeech(text, speechStyle);
           const cleanText = stripSpeechTags(rewrittenText);
           setLastVoiceTranscript(cleanText);
 
-          console.error(
-            `[xai-voice] text rewritten: "${rewrittenText.substring(0, 80)}..." clean: "${cleanText.substring(0, 80)}..."`,
+          debugLog(
+            "xai-voice",
+            `text rewritten: "${rewrittenText.substring(0, 80)}..." clean: "${cleanText.substring(0, 80)}..."`,
           );
 
-          console.error(`[xai-voice] synthesize start voice=${voiceId} lang=${lang}`);
+          debugLog("xai-voice", `synthesize start voice=${voiceId} lang=${lang}`);
 
           const result = await piVoiceAdapterV1.synthesize({
             text: rewrittenText,
@@ -262,34 +291,35 @@ export async function registerXaiVoiceTelegramHandler(): Promise<void> {
             language: lang,
           });
 
-          console.error(`[xai-voice] synthesize complete: ${result.filePath}`);
+          debugLog("xai-voice", `synthesize complete: ${result.filePath}`);
 
           // Convert MP3 → OGG/Opus
           const oggPath = result.filePath.replace(/\.mp3$/i, ".voice.ogg");
           try {
-            console.error(`[xai-voice] ffmpeg start: ${result.filePath} → ${oggPath}`);
+            debugLog("xai-voice", `ffmpeg start: ${result.filePath} → ${oggPath}`);
             await runFfmpeg(result.filePath, oggPath);
-            console.error(`[xai-voice] ffmpeg complete: ${oggPath}`);
+            debugLog("xai-voice", `ffmpeg complete: ${oggPath}`);
 
             await unlink(result.filePath);
-            console.error(`[xai-voice] cleanup mp3: ${result.filePath}`);
+            debugLog("xai-voice", `cleanup mp3: ${result.filePath}`);
 
-            console.error(
-              `[xai-voice] RETURN { audioPath: ${oggPath}, transcriptText: "${cleanText.substring(0, 60)}..." }`,
+            debugLog(
+              "xai-voice",
+              `RETURN { audioPath: ${oggPath}, transcriptText: "${cleanText.substring(0, 60)}..." }`,
             );
             return { audioPath: oggPath, transcriptText: cleanText };
           } catch (err) {
-            console.error(`[xai-voice] ffmpeg failed, falling back to mp3:`, err);
+            debugLog("xai-voice", "ffmpeg failed, falling back to mp3", err);
             return { audioPath: result.filePath, transcriptText: cleanText };
           }
         } catch (err) {
-          console.error(`[xai-voice] PROVIDER ERROR:`, err);
+          debugLog("xai-voice", "PROVIDER ERROR", err);
           throw err;
         }
       },
       { id: "xai" },
     );
-    console.error(`[xai-voice] provider registered successfully`);
+    debugLog("xai-voice", "provider registered successfully");
   } catch {
     // pi-telegram not available — voice works standalone without it.
     // Silently skip. No dependency on pi-telegram.
