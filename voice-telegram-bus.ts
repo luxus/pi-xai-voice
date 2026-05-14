@@ -252,10 +252,47 @@ async function runFfmpeg(inputPath: string, outputPath: string): Promise<void> {
 }
 
 export async function registerXaiVoiceTelegramHandler(): Promise<void> {
+  debugLog("xai-voice", "registerXaiVoiceTelegramHandler() called");
+
   try {
     const __dirname = dirname(fileURLToPath(import.meta.url));
-    const piTelegram = await import(resolve(__dirname, "../pi-telegram/lib/outbound-handlers"));
-    if (typeof piTelegram.registerTelegramVoiceProvider !== "function") return;
+
+    // Try multiple import paths for pi-telegram (git-installed, npm, etc.)
+    const possiblePaths = [
+      resolve(__dirname, "../pi-telegram/lib/outbound-handlers"),
+      resolve(__dirname, "../../pi-telegram/lib/outbound-handlers"),
+      resolve(__dirname, "../../../pi-telegram/lib/outbound-handlers"),
+      "pi-telegram/lib/outbound-handlers",
+    ];
+
+    let piTelegram: Record<string, unknown> | undefined;
+    let lastError: unknown;
+
+    for (const path of possiblePaths) {
+      debugLog("xai-voice", `Trying import path: ${path}`);
+      try {
+        piTelegram = await import(path);
+        debugLog("xai-voice", `Import succeeded: ${path}`);
+        break;
+      } catch (err) {
+        lastError = err;
+        debugLog("xai-voice", `Import failed: ${path}`, err);
+      }
+    }
+
+    if (!piTelegram) {
+      debugLog("xai-voice", "All import paths failed, last error:", lastError);
+      return;
+    }
+
+    if (typeof piTelegram.registerTelegramVoiceProvider !== "function") {
+      debugLog(
+        "xai-voice",
+        "registerTelegramVoiceProvider is not a function",
+        Object.keys(piTelegram),
+      );
+      return;
+    }
 
     debugLog("xai-voice", "registering provider with id=xai");
     piTelegram.registerTelegramVoiceProvider(
@@ -320,9 +357,8 @@ export async function registerXaiVoiceTelegramHandler(): Promise<void> {
       { id: "xai" },
     );
     debugLog("xai-voice", "provider registered successfully");
-  } catch {
-    // pi-telegram not available — voice works standalone without it.
-    // Silently skip. No dependency on pi-telegram.
+  } catch (err) {
+    debugLog("xai-voice", "registerXaiVoiceTelegramHandler catch block:", err);
   }
 }
 
