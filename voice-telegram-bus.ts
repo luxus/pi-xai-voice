@@ -284,11 +284,13 @@ async function runFfmpeg(inputPath: string, outputPath: string): Promise<void> {
 export async function registerXaiVoiceTelegramHandler(): Promise<void> {
   console.log('[pi-xai-voice] Registrierung mit pi-telegram versuchen...');
 
+  const __dirname = dirname(fileURLToPath(import.meta.url));
   const paths = [
-    "pi-telegram/lib/outbound-handlers",
-    "../pi-telegram/lib/outbound-handlers",
-    "../../pi-telegram/lib/outbound-handlers",
-    "../../../pi-telegram/lib/outbound-handlers",
+    resolve(__dirname, "pi-telegram/lib/outbound-handlers"),
+    resolve(__dirname, "../pi-telegram/lib/outbound-handlers"),
+    resolve(__dirname, "../../pi-telegram/lib/outbound-handlers"),
+    resolve(__dirname, "../../../pi-telegram/lib/outbound-handlers"),
+    resolve(__dirname, "../../../../pi-telegram/lib/outbound-handlers"),
   ];
 
   for (const p of paths) {
