@@ -11,6 +11,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { piVoiceAdapterV1 } from "./voice-adapter.ts";
 import { XAI_VOICE_IDS } from "./xai-voice.ts";
+import { resolveXaiConfig } from "./xai-config.ts";
 
 // ─── Debug Logger ────────────────────────────────────────────────────────────
 
@@ -193,6 +194,35 @@ export function getVoiceConfig(): PiTelegramVoiceConfig {
     }
     return { ...DEFAULT_VOICE_CONFIG, ...migrated };
   }
+
+  // Fallback: read from xai.voice config in settings.json
+  try {
+    const xaiConfig = resolveXaiConfig();
+    const voiceConfig = xaiConfig.xai.voice;
+    if (voiceConfig && typeof voiceConfig === "object" && !Array.isArray(voiceConfig)) {
+      const xaiPartial: Partial<PiTelegramVoiceConfig> = {};
+      const vc = voiceConfig as Record<string, unknown>;
+      if (typeof vc.defaultVoice === "string") xaiPartial.defaultVoice = vc.defaultVoice;
+      if (typeof vc.defaultLanguage === "string") xaiPartial.defaultLanguage = vc.defaultLanguage;
+      if (
+        typeof vc.speechStyle === "string" &&
+        ["literal", "rewrite-light", "rewrite-tags"].includes(vc.speechStyle)
+      ) {
+        xaiPartial.speechStyle = vc.speechStyle as PiTelegramVoiceConfig["speechStyle"];
+      }
+      if (typeof vc.replyMode === "string") {
+        xaiPartial.replyMode = migrateReplyMode(vc.replyMode);
+      }
+      if (typeof vc.sendTranscript === "boolean") xaiPartial.sendTranscript = vc.sendTranscript;
+
+      const merged = { ...DEFAULT_VOICE_CONFIG, ...xaiPartial };
+      (globalThis as Record<string, unknown>)[VOICE_CONFIG_KEY] = { ...merged };
+      return merged;
+    }
+  } catch {
+    // Ignore config read errors
+  }
+
   (globalThis as Record<string, unknown>)[VOICE_CONFIG_KEY] = { ...DEFAULT_VOICE_CONFIG };
   return { ...DEFAULT_VOICE_CONFIG };
 }
