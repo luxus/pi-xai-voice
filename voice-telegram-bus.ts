@@ -252,114 +252,41 @@ async function runFfmpeg(inputPath: string, outputPath: string): Promise<void> {
 }
 
 export async function registerXaiVoiceTelegramHandler(): Promise<void> {
-  debugLog("xai-voice", "registerXaiVoiceTelegramHandler() called");
+  console.log('[pi-xai-voice] Registrierung mit pi-telegram versuchen...');
 
-  try {
-    const __dirname = dirname(fileURLToPath(import.meta.url));
+  const paths = [
+    "pi-telegram/lib/outbound-handlers",
+    "../pi-telegram/lib/outbound-handlers",
+    "../../pi-telegram/lib/outbound-handlers",
+    "../../../pi-telegram/lib/outbound-handlers",
+  ];
 
-    // Try multiple import paths for pi-telegram (git-installed, npm, etc.)
-    const possiblePaths = [
-      resolve(__dirname, "../pi-telegram/lib/outbound-handlers"),
-      resolve(__dirname, "../../pi-telegram/lib/outbound-handlers"),
-      resolve(__dirname, "../../../pi-telegram/lib/outbound-handlers"),
-      "pi-telegram/lib/outbound-handlers",
-    ];
-
-    let piTelegram: Record<string, unknown> | undefined;
-    let lastError: unknown;
-
-    for (const path of possiblePaths) {
-      debugLog("xai-voice", `Trying import path: ${path}`);
-      try {
-        piTelegram = await import(path);
-        debugLog("xai-voice", `Import succeeded: ${path}`);
-        break;
-      } catch (err) {
-        lastError = err;
-        debugLog("xai-voice", `Import failed: ${path}`, err);
+  for (const p of paths) {
+    try {
+      const piTelegram = await import(p);
+      if (typeof piTelegram.registerTelegramVoiceProvider === "function") {
+        piTelegram.registerTelegramVoiceProvider(
+          async (text: string, options: any = {}) => {
+            console.log('[XAI-TTS] synthesize called for text of length', text.length);
+            const config = getVoiceConfig();
+            const result = await piVoiceAdapterV1.synthesize({
+              text,
+              voiceId: config.defaultVoice,
+              language: options?.lang || config.defaultLanguage,
+            });
+            console.log('[XAI-TTS] returned filePath:', result.filePath);
+            return result.filePath;
+          },
+          { id: "xai" }
+        );
+        console.log('[pi-xai-voice] Provider erfolgreich registriert');
+        return;
       }
+    } catch (e) {
+      console.log('[pi-xai-voice] Import Versuch fehlgeschlagen:', p);
     }
-
-    if (!piTelegram) {
-      debugLog("xai-voice", "All import paths failed, last error:", lastError);
-      return;
-    }
-
-    if (typeof piTelegram.registerTelegramVoiceProvider !== "function") {
-      debugLog(
-        "xai-voice",
-        "registerTelegramVoiceProvider is not a function",
-        Object.keys(piTelegram),
-      );
-      return;
-    }
-
-    debugLog("xai-voice", "registering provider with id=xai");
-    piTelegram.registerTelegramVoiceProvider(
-      async (text: any, options: any) => {
-        try {
-          debugLog(
-            "xai-voice",
-            `PROVIDER CALLED text="${text?.substring?.(0, 60) ?? text}" lang=${options?.lang}`,
-          );
-
-          const config = getVoiceConfig();
-          const voiceId = config.defaultVoice;
-          const lang = options?.lang || config.defaultLanguage;
-          const speechStyle = config.speechStyle;
-
-          debugLog("xai-voice", `config loaded voice=${voiceId} lang=${lang} style=${speechStyle}`);
-
-          // Rewrite text for better speech delivery based on speech style
-          const rewrittenText = rewriteForSpeech(text, speechStyle);
-          const cleanText = stripSpeechTags(rewrittenText);
-          setLastVoiceTranscript(cleanText);
-
-          debugLog(
-            "xai-voice",
-            `text rewritten: "${rewrittenText.substring(0, 80)}..." clean: "${cleanText.substring(0, 80)}..."`,
-          );
-
-          debugLog("xai-voice", `synthesize start voice=${voiceId} lang=${lang}`);
-
-          const result = await piVoiceAdapterV1.synthesize({
-            text: rewrittenText,
-            voiceId,
-            language: lang,
-          });
-
-          debugLog("xai-voice", `synthesize complete: ${result.filePath}`);
-
-          // Convert MP3 → OGG/Opus
-          const oggPath = result.filePath.replace(/\.mp3$/i, ".voice.ogg");
-          try {
-            debugLog("xai-voice", `ffmpeg start: ${result.filePath} → ${oggPath}`);
-            await runFfmpeg(result.filePath, oggPath);
-            debugLog("xai-voice", `ffmpeg complete: ${oggPath}`);
-
-            await unlink(result.filePath);
-            debugLog("xai-voice", `cleanup mp3: ${result.filePath}`);
-
-            debugLog(
-              "xai-voice",
-              `RETURN { audioPath: ${oggPath}, transcriptText: "${cleanText.substring(0, 60)}..." }`,
-            );
-            return { audioPath: oggPath, transcriptText: cleanText };
-          } catch (err) {
-            debugLog("xai-voice", "ffmpeg failed, falling back to mp3", err);
-            return { audioPath: result.filePath, transcriptText: cleanText };
-          }
-        } catch (err) {
-          debugLog("xai-voice", "PROVIDER ERROR", err);
-          throw err;
-        }
-      },
-      { id: "xai" },
-    );
-    debugLog("xai-voice", "provider registered successfully");
-  } catch (err) {
-    debugLog("xai-voice", "registerXaiVoiceTelegramHandler catch block:", err);
   }
+  console.warn('[pi-xai-voice] pi-telegram nicht gefunden – standalone Mode');
 }
 
 // ─── Voice Extension Section ─────────────────────────────────────────────────
