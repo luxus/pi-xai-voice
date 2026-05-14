@@ -4,7 +4,7 @@
  * Zero-coupling: reads/writes globalThis registries created by pi-telegram.
  */
 
-import { appendFileSync } from "node:fs";
+import { appendFileSync, existsSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { unlink } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
@@ -267,15 +267,29 @@ export async function registerXaiVoiceTelegramHandler(): Promise<void> {
       if (typeof piTelegram.registerTelegramVoiceProvider === "function") {
         piTelegram.registerTelegramVoiceProvider(
           async (text: string, options: any = {}) => {
-            console.log('[XAI-TTS] synthesize called for text of length', text.length);
+            console.log('[XAI-TTS] Provider called with text length:', text.length);
+
             const config = getVoiceConfig();
             const result = await piVoiceAdapterV1.synthesize({
               text,
               voiceId: config.defaultVoice,
               language: options?.lang || config.defaultLanguage,
             });
-            console.log('[XAI-TTS] returned filePath:', result.filePath);
-            return result.filePath;
+
+            console.log('[XAI-TTS] synthesize returned filePath:', result.filePath);
+            console.log('[XAI-TTS] file exists?', existsSync(result.filePath));
+
+            // Convert to OGG/Opus for Telegram (pi-telegram no longer auto-converts)
+            const oggPath = result.filePath.replace(/\.mp3$/i, '.voice.ogg');
+            try {
+              await runFfmpeg(result.filePath, oggPath);
+              await unlink(result.filePath);
+              console.log('[XAI-TTS] ffmpeg complete:', oggPath);
+              return oggPath;
+            } catch (err) {
+              console.log('[XAI-TTS] ffmpeg failed, falling back to mp3:', err);
+              return result.filePath;
+            }
           },
           { id: "xai" }
         );
