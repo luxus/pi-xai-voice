@@ -270,8 +270,16 @@ export async function registerXaiVoiceTelegramHandler(): Promise<void> {
             console.log('[XAI-TTS] Provider called with text length:', text.length);
 
             const config = getVoiceConfig();
+            console.log('[XAI-TTS] config voice=', config.defaultVoice, 'lang=', config.defaultLanguage, 'style=', config.speechStyle);
+
+            // Apply speech style (tags, light rewrite, or literal)
+            const speechText = rewriteForSpeech(text, config.speechStyle);
+            const cleanText = stripSpeechTags(speechText);
+            setLastVoiceTranscript(cleanText);
+            console.log('[XAI-TTS] speechText:', speechText.substring(0, 80) + (speechText.length > 80 ? '...' : ''));
+
             const result = await piVoiceAdapterV1.synthesize({
-              text,
+              text: speechText,
               voiceId: config.defaultVoice,
               language: options?.lang || config.defaultLanguage,
             });
@@ -284,10 +292,15 @@ export async function registerXaiVoiceTelegramHandler(): Promise<void> {
             try {
               await runFfmpeg(result.filePath, oggPath);
               await unlink(result.filePath);
-              console.log('[XAI-TTS] ffmpeg complete:', oggPath);
+              const oggExists = existsSync(oggPath);
+              console.log('[XAI-TTS] ffmpeg complete:', oggPath, 'exists?', oggExists);
+              if (!oggExists) {
+                console.error('[XAI-TTS] OGG file not found after ffmpeg, falling back to mp3');
+                return result.filePath;
+              }
               return oggPath;
             } catch (err) {
-              console.log('[XAI-TTS] ffmpeg failed, falling back to mp3:', err);
+              console.error('[XAI-TTS] ffmpeg failed, falling back to mp3:', err);
               return result.filePath;
             }
           },
