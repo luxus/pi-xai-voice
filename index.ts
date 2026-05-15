@@ -1054,19 +1054,22 @@ export default function piXaiVoiceExtension(pi: ExtensionAPI): void {
       speechStyle: runtime.defaults.speechStyle,
       sendTranscript: runtime.defaults.sendTranscript,
     });
-    // Re-register via official helpers (for persistent entries).
-    // The host (pi-telegram) now always calls both reRegisterPersistent* on session_start + init.
-    // This + the persistent: true sidecar + auto-restore in registry creation makes Voice
-    // provider and section (menu) registration reliable across fresh start and resume.
-    // Only fall back to direct registration if the reRegister import itself fails.
+    // Re-register via official helpers (for persistent entries) + always force direct registration.
+    // This is aggressive/belt-and-suspenders: reRegister handles the happy path from persistent maps,
+    // but we also always call the direct register* functions so the section (menu) and provider
+    // are actively (re)registered against the live registry on every session_start.
+    // Guarantees the 🔊 Voice (x.ai) menu appears reliably even if initial load timing was early.
     try {
       const piTelegram = await import("@llblab/pi-telegram");
       piTelegram.reRegisterPersistentVoiceProviders?.();
       piTelegram.reRegisterPersistentSections?.();
     } catch {
-      // Fallback to direct (which also does both) only on import failure
-      registerVoiceTelegramBus();
+      // Import failed; fall back to direct which populates persistent + registers
     }
+
+    // Always attempt direct registration on session_start (safe, disposes previous).
+    // This ensures the Voice section menu and provider are present when the bridge is live.
+    registerVoiceTelegramBus();
 
     ctx.ui.setStatus("xai-voice-telegram", "🎙️");
 
