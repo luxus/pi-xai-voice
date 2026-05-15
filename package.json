@@ -44,6 +44,7 @@
     "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*",
     "@earendil-works/pi-tui": "*",
+    "@llblab/pi-telegram": "*",
     "typebox": ">=1.1.24 <2"
   },
   "engines": {

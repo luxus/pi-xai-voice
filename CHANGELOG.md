@@ -2,7 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.2.0] - 2026-05-12
+## Unreleased — Voice v2 Integration with Minimal pi-telegram
+
+### Changed
+- Full adoption of the new minimal pi-telegram voice architecture.
+- `voice-telegram-bus.ts` now uses clean static import from `@llblab/pi-telegram` (with fallback only for local dev).
+- Provider registration now supplies `getVoicePromptContribution` for LLM guidance.
+- `setVoiceConfig` now persists `replyMode` to `telegram.json` so bridge tagging respects UI changes.
+- Transcript is **always** returned (for voice caption + π session logs). The `sendTranscript` toggle only controls whether it is also sent as a separate text message.
+- Improved ffmpeg handling: safe temp OGG paths, proper cleanup, structured event recording via the correct recorder key.
+- `record_voice` chat action is now shown during voice delivery.
+
+### Removed
+- Heavy relative path hacking and 30s re-registration interval in the main path.
+- German debug logs during registration.
+- Wrong event recorder key usage in debug logging.
+
+This release aligns with the decision that **pi-telegram should only offer interfaces** while `pi-xai-voice` owns the full voice experience (policy, rewriting, TTS, conversion, transcript behavior).
+
+See pi-telegram `docs/voice.md` and the v2 tracker issues for details.
 
 ### Added
 

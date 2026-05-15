@@ -4,11 +4,13 @@
  * Zero-coupling: reads/writes globalThis registries created by pi-telegram.
  */
 
-import { appendFileSync, existsSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { unlink } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { tmpdir } from "node:os";
+import { randomBytes } from "node:crypto";
 import { piVoiceAdapterV1 } from "./voice-adapter.ts";
 import { XAI_VOICE_IDS } from "./xai-voice.ts";
 import { resolveXaiConfig } from "./xai-config.ts";
@@ -26,12 +28,12 @@ function debugLog(tag: string, message: string, extra?: unknown): void {
   } catch {
     // Ignore write errors
   }
-  // Also try recordRuntimeEvent if available
+  // Record via the event recorder that pi-telegram actually exposes (correct global key).
   try {
-    const recordEvent = (globalThis as Record<string, unknown>).__piTelegramRecordEvent__;
+    const recordEvent = (globalThis as Record<string, unknown>).__piTelegramVoiceEventRecorder__;
     if (typeof recordEvent === "function") {
-      (recordEvent as (category: string, message: string, details?: unknown) => void)(
-        tag,
+      (recordEvent as (category: string, err: unknown, details?: unknown) => void)(
+        `xai-voice:${tag}`,
         message,
         extra,
       );
@@ -58,6 +60,13 @@ const VOICE_CONFIG_KEY = "__piTelegramVoiceConfig__" as const;
 
 let onConfigChangeCallback: ((config: PiTelegramVoiceConfig) => void) | undefined;
 let lastVoiceTranscript: string | undefined;
+
+/** Best-effort path to the telegram.json that pi-telegram's configStore reads. */
+function getTelegramJsonPath(): string {
+  const home = process.env.HOME || process.env.USERPROFILE || "/tmp";
+  // Common locations: ~/.pi/telegram.json (global) or project-level under agent dir
+  return join(home, ".pi", "telegram.json");
+}
 
 export function onVoiceConfigChanged(callback: (config: PiTelegramVoiceConfig) => void): void {
   onConfigChangeCallback = callback;
@@ -232,6 +241,25 @@ export function setVoiceConfig(partial: Partial<PiTelegramVoiceConfig>): void {
   const updated = { ...current, ...partial };
   (globalThis as Record<string, unknown>)[VOICE_CONFIG_KEY] = updated;
   onConfigChangeCallback?.(updated);
+
+  // Persist replyMode (and any voice.* fields that affect bridge policy) to telegram.json.
+  // This makes changes in the Voice (x.ai) section actually control tagging / mirror / voice / manual
+  // because pi-telegram's getTelegramVoiceReplyMode reads telegram.json (maintainer requirement).
+  // xai-voice owns the UI and the write; bridge only offers the read interface.
+  if (partial.replyMode !== undefined) {
+    try {
+      const path = getTelegramJsonPath();
+      let cfg: any = {};
+      if (existsSync(path)) {
+        cfg = JSON.parse(readFileSync(path, "utf8") || "{}");
+      }
+      cfg.voice = cfg.voice || {};
+      cfg.voice.replyMode = updated.replyMode;
+      writeFileSync(path, JSON.stringify(cfg, null, 2));
+    } catch {
+      // Non-fatal: globalThis fallback + next session_start sync still works.
+    }
+  }
 }
 
 // ─── Voice Outbound Handler ──────────────────────────────────────────────────
@@ -281,71 +309,113 @@ async function runFfmpeg(inputPath: string, outputPath: string): Promise<void> {
   });
 }
 
-export async function registerXaiVoiceTelegramHandler(): Promise<void> {
-  console.log('[pi-xai-voice] Registrierung mit pi-telegram versuchen...');
+/** Generate a safe, unique .ogg path in the system temp dir (more reliable than mutating the input filename). */
+function createOggOutputPath(originalMp3Path: string): string {
+  const base = basename(originalMp3Path, extname(originalMp3Path)).replace(/[^a-zA-Z0-9_-]/g, "");
+  const unique = randomBytes(6).toString("hex");
+  return join(tmpdir(), `${base || "xai-voice"}-${unique}.ogg`);
+}
 
+export async function registerXaiVoiceTelegramHandler(): Promise<void> {
+  // Try clean static import first (after adding @llblab/pi-telegram peerDep).
+  // Falls back to old relative path hack only for local sibling dev without proper linking.
+  try {
+    const piTelegram = await import("@llblab/pi-telegram");
+    if (typeof piTelegram.registerTelegramVoiceProvider === "function") {
+      const fn = async (text: string, options: any = {}) => {
+        const config = getVoiceConfig();
+
+        // Apply speech style (tags, light rewrite, or literal)
+        const speechText = rewriteForSpeech(text, config.speechStyle);
+        const cleanText = stripSpeechTags(speechText);
+        setLastVoiceTranscript(cleanText);
+
+        const result = await piVoiceAdapterV1.synthesize({
+          text: speechText,
+          voiceId: config.defaultVoice,
+          language: options?.lang || config.defaultLanguage,
+        });
+
+        // Convert to OGG/Opus for Telegram (provider responsibility, as per docs/voice.md)
+        const oggPath = createOggOutputPath(result.filePath);
+          try {
+            await runFfmpeg(result.filePath, oggPath);
+            await unlink(result.filePath).catch(() => {});
+            if (existsSync(oggPath)) {
+              try {
+                const rec = (globalThis as any).__piTelegramVoiceEventRecorder__;
+                if (typeof rec === "function") rec("xai-voice", null, { phase: "ffmpeg-success", oggPath });
+              } catch {}
+
+              const config = getVoiceConfig();
+              // Always return a clean transcriptText (for caption under voice + session history/logs).
+              // The toggle only decides whether we also send it as a separate text message after the voice note.
+              return {
+                audioPath: oggPath,
+                transcriptText: cleanText,                    // always useful for logs + caption
+                sendTranscriptAsMessage: config.sendTranscript,
+              };
+            }
+          } catch (ffmpegErr) {
+            try {
+              const rec = (globalThis as any).__piTelegramVoiceEventRecorder__;
+              if (typeof rec === "function") rec("xai-voice", ffmpegErr, { phase: "ffmpeg-failed" });
+            } catch {}
+          }
+          return result.filePath;
+      };
+      (fn as any).getVoicePromptContribution = (view: any) => {
+        if (view?.voiceReplyPreferred || view?.voiceReplyRequired) {
+          return "You are in voice mode. The user will hear your reply as spoken audio.\nReply ONLY with the exact text to be spoken.\nNO thinking, no markdown, no code, no extra commentary or explanations.";
+        }
+        return undefined;
+      };
+      piTelegram.registerTelegramVoiceProvider(fn as any, { id: "xai" });
+      return;
+    }
+  } catch {
+    // fall to hack below for pure local dev
+  }
+
+  // Fallback hack for local sibling checkout (removed in published releases)
   const __dirname = dirname(fileURLToPath(import.meta.url));
   const paths = [
-    resolve(__dirname, "pi-telegram/lib/outbound-handlers"),
     resolve(__dirname, "../pi-telegram/lib/outbound-handlers"),
     resolve(__dirname, "../../pi-telegram/lib/outbound-handlers"),
-    resolve(__dirname, "../../../pi-telegram/lib/outbound-handlers"),
-    resolve(__dirname, "../../../../pi-telegram/lib/outbound-handlers"),
   ];
-
   for (const p of paths) {
     try {
       const piTelegram = await import(p);
       if (typeof piTelegram.registerTelegramVoiceProvider === "function") {
-        piTelegram.registerTelegramVoiceProvider(
-          async (text: string, options: any = {}) => {
-            console.log('[XAI-TTS] Provider called with text length:', text.length);
-
-            const config = getVoiceConfig();
-            console.log('[XAI-TTS] config voice=', config.defaultVoice, 'lang=', config.defaultLanguage, 'style=', config.speechStyle);
-
-            // Apply speech style (tags, light rewrite, or literal)
-            const speechText = rewriteForSpeech(text, config.speechStyle);
-            const cleanText = stripSpeechTags(speechText);
-            setLastVoiceTranscript(cleanText);
-            console.log('[XAI-TTS] speechText:', speechText.substring(0, 80) + (speechText.length > 80 ? '...' : ''));
-
-            const result = await piVoiceAdapterV1.synthesize({
-              text: speechText,
-              voiceId: config.defaultVoice,
-              language: options?.lang || config.defaultLanguage,
-            });
-
-            console.log('[XAI-TTS] synthesize returned filePath:', result.filePath);
-            console.log('[XAI-TTS] file exists?', existsSync(result.filePath));
-
-            // Convert to OGG/Opus for Telegram (pi-telegram no longer auto-converts)
-            const oggPath = result.filePath.replace(/\.mp3$/i, '.voice.ogg');
-            try {
-              await runFfmpeg(result.filePath, oggPath);
-              await unlink(result.filePath);
-              const oggExists = existsSync(oggPath);
-              console.log('[XAI-TTS] ffmpeg complete:', oggPath, 'exists?', oggExists);
-              if (!oggExists) {
-                console.error('[XAI-TTS] OGG file not found after ffmpeg, falling back to mp3');
-                return result.filePath;
-              }
-              return oggPath;
-            } catch (err) {
-              console.error('[XAI-TTS] ffmpeg failed, falling back to mp3:', err);
-              return result.filePath;
-            }
-          },
-          { id: "xai" }
-        );
-        console.log('[pi-xai-voice] Provider erfolgreich registriert');
+        const fn = async (text: string, options: any = {}) => {
+          const config = getVoiceConfig();
+          const speechText = rewriteForSpeech(text, config.speechStyle);
+          const cleanText = stripSpeechTags(speechText);
+          setLastVoiceTranscript(cleanText);
+          const result = await piVoiceAdapterV1.synthesize({
+            text: speechText,
+            voiceId: config.defaultVoice,
+            language: options?.lang || config.defaultLanguage,
+          });
+          const oggPath = result.filePath.replace(/\.mp3$/i, ".voice.ogg");
+          try {
+            await runFfmpeg(result.filePath, oggPath);
+            await unlink(result.filePath);
+            if (existsSync(oggPath)) return oggPath;
+          } catch {}
+          return result.filePath;
+        };
+        (fn as any).getVoicePromptContribution = (view: any) => {
+          if (view?.voiceReplyPreferred || view?.voiceReplyRequired) {
+            return "You are in voice mode. Reply ONLY with the exact text to be spoken. NO thinking, no markdown.";
+          }
+          return undefined;
+        };
+        piTelegram.registerTelegramVoiceProvider(fn as any, { id: "xai" });
         return;
       }
-    } catch (e) {
-      console.log('[pi-xai-voice] Import Versuch fehlgeschlagen:', p);
-    }
+    } catch {}
   }
-  console.warn('[pi-xai-voice] pi-telegram nicht gefunden – standalone Mode');
 }
 
 // ─── Voice Extension Section ─────────────────────────────────────────────────
@@ -369,8 +439,14 @@ function isVoiceSectionRegistered(): boolean {
 export async function registerXaiVoiceTelegramSection(): Promise<void> {
   if (isVoiceSectionRegistered()) return;
   try {
-    const __dirname = dirname(fileURLToPath(import.meta.url));
-    const piTelegram = await import(resolve(__dirname, "../pi-telegram/lib/extension-sections"));
+    // Prefer clean static import (same pattern as the voice provider handler).
+    let piTelegram: any;
+    try {
+      piTelegram = await import("@llblab/pi-telegram");
+    } catch {
+      const __dirname = dirname(fileURLToPath(import.meta.url));
+      piTelegram = await import(resolve(__dirname, "../pi-telegram/lib/extension-sections"));
+    }
     if (typeof piTelegram.registerTelegramSection !== "function") return;
 
     sectionDisposer?.();
