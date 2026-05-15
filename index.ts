@@ -1067,11 +1067,13 @@ export default function piXaiVoiceExtension(pi: ExtensionAPI): void {
       registerVoiceTelegramBus();
     }
 
-    // Simple forced re-registration after 2 seconds.
-    // This helps when the section registry isn't ready yet on session_start.
-    setTimeout(() => {
-      registerXaiVoiceTelegramSection().catch(() => {});
-    }, 2000);
+    // Aggressive re-registration for the Voice menu section.
+    // We try multiple times because the section registry is sometimes not ready yet.
+    registerXaiVoiceTelegramSection().catch(() => {});
+    setTimeout(() => registerXaiVoiceTelegramSection().catch(() => {}), 1500);
+    setTimeout(() => registerXaiVoiceTelegramSection().catch(() => {}), 4000);
+    setTimeout(() => registerXaiVoiceTelegramSection().catch(() => {}), 8000);
+    setTimeout(() => registerXaiVoiceTelegramSection().catch(() => {}), 15000);
 
     onVoiceConfigChanged((config) => {
       const currentPrefs = getActiveVoicePreferences();
