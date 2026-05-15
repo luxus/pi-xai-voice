@@ -451,11 +451,12 @@ export async function registerXaiVoiceTelegramSection(): Promise<void> {
     if (typeof piTelegram.registerTelegramSection !== "function") return;
 
     sectionDisposer?.();
-    sectionDisposer = piTelegram.registerTelegramSection({
-      id: "pi-xai-voice",
-      label: "🔊 Voice (x.ai)",
-      order: 10,
-      render: async (ctx: any) => {
+    sectionDisposer = piTelegram.registerTelegramSection(
+      {
+        id: "pi-xai-voice",
+        label: "🔊 Voice (x.ai)",
+        order: 10,
+        render: async (ctx: any) => {
         const config = getVoiceConfig();
         const voiceDesc = VOICE_DESCRIPTIONS[config.defaultVoice];
         return {
@@ -702,7 +703,9 @@ export async function registerXaiVoiceTelegramSection(): Promise<void> {
           throw err;
         }
       },
-    });
+    },
+    { persistent: true }
+  );
   } catch {
     // pi-telegram not available — voice works standalone without it.
     // Silently skip. No dependency on pi-telegram.

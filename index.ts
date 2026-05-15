@@ -1057,8 +1057,9 @@ export default function piXaiVoiceExtension(pi: ExtensionAPI): void {
       speechStyle: runtime.defaults.speechStyle,
       sendTranscript: runtime.defaults.sendTranscript,
     });
-    // Re-register persistent voice provider after session resume
+    // Re-register everything on session resume (persistent registrations will be restored automatically by pi-telegram)
     registerVoiceTelegramBus();
+
     onVoiceConfigChanged((config) => {
       const currentPrefs = getActiveVoicePreferences();
       const updatedPrefs = {
