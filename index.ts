@@ -528,6 +528,7 @@ async function speakText(text: string, ctx: VoiceCommandContext): Promise<void> 
 function resetVoiceCaptureUi(ctx: VoiceCommandContext): void {
   ctx.ui.setStatus("xai-voice-record", undefined);
   ctx.ui.setStatus("xai-voice-transcribe", undefined);
+  ctx.ui.setStatus("xai-voice-recording", undefined);
   stopLiveTranscript(ctx, { restoreEditor: true });
   stopListeningWidget(ctx);
 }
@@ -672,6 +673,7 @@ async function startVoiceCapture(ctx: VoiceCommandContext): Promise<void> {
     log: runtime.log,
   });
   ctx.ui.setStatus("xai-voice-record", undefined);
+  ctx.ui.setStatus("xai-voice-recording", "🔴 REC");
   liveTranscriptBaseEditorText = ctx.ui.getEditorText();
   liveTranscriptPreviewActive = false;
   if (runtime.defaults.liveTranscriptEnabled) {
@@ -697,6 +699,7 @@ async function stopVoiceCapture(ctx: VoiceCommandContext): Promise<void> {
   const recording = activeRecording;
   activeRecording = undefined;
   ctx.ui.setStatus("xai-voice-record", undefined);
+  ctx.ui.setStatus("xai-voice-recording", undefined);
   stopLiveTranscript(ctx, { restoreEditor: false });
   stopListeningWidget(ctx);
   ctx.ui.setStatus("xai-voice-transcribe", "Transcribing microphone audio...");
@@ -1040,12 +1043,6 @@ export default function piXaiVoiceExtension(pi: ExtensionAPI): void {
 
   registerVoiceTelegramBus();
 
-  // Light re-registration on session_start is sufficient thanks to `persistent: true`.
-  // The interval is kept as a very defensive fallback (can be removed later).
-  setInterval(() => {
-    registerVoiceTelegramBus();
-  }, 60_000);
-
   pi.on("session_start", async (_event, ctx) => {
     const runtime = createRuntime();
     setActiveVoicePreferences(runtime.defaults);
@@ -1057,23 +1054,39 @@ export default function piXaiVoiceExtension(pi: ExtensionAPI): void {
       speechStyle: runtime.defaults.speechStyle,
       sendTranscript: runtime.defaults.sendTranscript,
     });
-    // Re-register persistent providers and sections after session resume
+    // Re-register via official helpers (for persistent entries).
+    // The host (pi-telegram) now always calls both reRegisterPersistent* on session_start + init.
+    // This + the persistent: true sidecar + auto-restore in registry creation makes Voice
+    // provider and section (menu) registration reliable across fresh start and resume.
+    // Only fall back to direct registration if the reRegister import itself fails.
     try {
       const piTelegram = await import("@llblab/pi-telegram");
       piTelegram.reRegisterPersistentVoiceProviders?.();
       piTelegram.reRegisterPersistentSections?.();
     } catch {
-      // Fallback
+      // Fallback to direct (which also does both) only on import failure
       registerVoiceTelegramBus();
     }
 
-    // Aggressive re-registration for the Voice menu section.
-    // We try multiple times because the section registry is sometimes not ready yet.
-    registerXaiVoiceTelegramSection().catch(() => {});
-    setTimeout(() => registerXaiVoiceTelegramSection().catch(() => {}), 1500);
-    setTimeout(() => registerXaiVoiceTelegramSection().catch(() => {}), 4000);
-    setTimeout(() => registerXaiVoiceTelegramSection().catch(() => {}), 8000);
-    setTimeout(() => registerXaiVoiceTelegramSection().catch(() => {}), 15000);
+    ctx.ui.setStatus("xai-voice-telegram", "🎙️");
+
+    // Good local user-facing diagnostics on session_start:
+    // notify via ctx.ui if Voice section fails to register or is non-active.
+    // Complements /telegram-status events from recordTelegramRuntimeEvent.
+    try {
+      const piTelegram = await import("@llblab/pi-telegram");
+      if (typeof piTelegram.getTelegramSectionDiagnostics === "function") {
+        const diags = piTelegram.getTelegramSectionDiagnostics();
+        const sectionDiag = diags.find((d: any) => d && d.id === "pi-xai-voice");
+        if (!sectionDiag || (sectionDiag.status && sectionDiag.status !== "active")) {
+          const status = sectionDiag?.status || "not registered";
+          ctx.ui.notify(
+            `🔊 Voice (x.ai) section ${status}. Check /telegram-status or wait for retry.`,
+            "warning",
+          );
+        }
+      }
+    } catch {}
 
     onVoiceConfigChanged((config) => {
       const currentPrefs = getActiveVoicePreferences();

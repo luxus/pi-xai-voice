@@ -358,11 +358,13 @@ export async function registerXaiVoiceTelegramHandler(): Promise<void> {
             }
           } catch (ffmpegErr) {
             try {
+              await unlink(result.filePath).catch(() => {});
               const rec = (globalThis as any).__piTelegramVoiceEventRecorder__;
               if (typeof rec === "function") rec("xai-voice", ffmpegErr, { phase: "ffmpeg-failed" });
             } catch {}
+            // Never return non-ogg (mp3) to the bridge per v2 contract; throw so bridge does clean text fallback.
+            throw ffmpegErr instanceof Error ? ffmpegErr : new Error("ffmpeg conversion failed");
           }
-          return result.filePath;
       };
       (fn as any).getVoicePromptContribution = (view: any) => {
         if (view?.voiceReplyPreferred || view?.voiceReplyRequired) {
@@ -370,7 +372,7 @@ export async function registerXaiVoiceTelegramHandler(): Promise<void> {
         }
         return undefined;
       };
-      piTelegram.registerTelegramVoiceProvider(fn as any, { id: "xai" });
+      piTelegram.registerTelegramVoiceProvider(fn as any, { id: "xai", persistent: true });
       return;
     }
   } catch {
@@ -403,7 +405,9 @@ export async function registerXaiVoiceTelegramHandler(): Promise<void> {
             await unlink(result.filePath);
             if (existsSync(oggPath)) return oggPath;
           } catch {}
-          return result.filePath;
+          // Never return mp3 in dev fallback either
+          await unlink(result.filePath).catch(() => {});
+          throw new Error("ffmpeg conversion failed (dev fallback)");
         };
         (fn as any).getVoicePromptContribution = (view: any) => {
           if (view?.voiceReplyPreferred || view?.voiceReplyRequired) {
@@ -411,7 +415,7 @@ export async function registerXaiVoiceTelegramHandler(): Promise<void> {
           }
           return undefined;
         };
-        piTelegram.registerTelegramVoiceProvider(fn as any, { id: "xai" });
+        piTelegram.registerTelegramVoiceProvider(fn as any, { id: "xai", persistent: true });
         return;
       }
     } catch {}
@@ -430,19 +434,29 @@ let sectionDisposer: (() => void) | undefined;
  * Skips if the section is already present in pi-telegram's registry.
  */
 export async function registerXaiVoiceTelegramSection(): Promise<void> {
+  // Setup import/recordEvent once (stable). Retry *only* the register call for
+  // cases where pi-telegram's section registry global isn't ready yet.
+  // Uses recordTelegramRuntimeEvent for diagnostics in /telegram-status.
+  // Complements reRegisterPersistentSections() + direct calls on session_start.
+  let piTelegram: any;
   try {
-    // Prefer clean static import (same pattern as the voice provider handler).
-    let piTelegram: any;
-    try {
-      piTelegram = await import("@llblab/pi-telegram");
-    } catch {
-      const __dirname = dirname(fileURLToPath(import.meta.url));
-      piTelegram = await import(resolve(__dirname, "../pi-telegram/lib/extension-sections"));
-    }
-    if (typeof piTelegram.registerTelegramSection !== "function") return;
+    piTelegram = await import("@llblab/pi-telegram");
+  } catch {
+    const __dirname = dirname(fileURLToPath(import.meta.url));
+    piTelegram = await import(resolve(__dirname, "../pi-telegram/lib/extension-sections"));
+  }
+  if (typeof piTelegram.registerTelegramSection !== "function") return;
 
-    sectionDisposer?.();
-    sectionDisposer = piTelegram.registerTelegramSection(
+  const recordEvent =
+    typeof piTelegram.recordTelegramRuntimeEvent === "function"
+      ? piTelegram.recordTelegramRuntimeEvent
+      : (globalThis as any).__piTelegramVoiceEventRecorder__;
+
+  const maxAttempts = 3;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      sectionDisposer?.();
+      sectionDisposer = piTelegram.registerTelegramSection(
       {
         id: "pi-xai-voice",
         label: "🔊 Voice (x.ai)",
@@ -697,13 +711,31 @@ export async function registerXaiVoiceTelegramSection(): Promise<void> {
     },
     { persistent: true }
   );
-  } catch (err) {
-    // Record failure so it appears in /telegram-status
-    try {
-      const record = (globalThis as any).__piTelegramVoiceEventRecorder__;
-      if (typeof record === "function") {
-        record("xai-voice", err, { phase: "section-registration-failed" });
+
+      // Success path: record via recordTelegramRuntimeEvent (preferred) so it appears in /telegram-status
+      try {
+        if (typeof recordEvent === "function") {
+          recordEvent("xai-voice", null, { phase: "section-registration-success", attempt });
+        }
+      } catch {}
+
+      return; // success, exit retry loop
+    } catch (err) {
+      // Record failure using recordTelegramRuntimeEvent when available
+      try {
+        if (typeof recordEvent === "function") {
+          recordEvent("xai-voice", err, { phase: "section-registration-failed", attempt });
+        } else {
+          const rec = (globalThis as any).__piTelegramVoiceEventRecorder__;
+          if (typeof rec === "function") rec("xai-voice", err, { phase: "section-registration-failed", attempt });
+        }
+      } catch {}
+
+      if (attempt < maxAttempts - 1) {
+        await new Promise((r) => setTimeout(r, 250 * (attempt + 1)));
+        continue;
       }
-    } catch {}
+      // exhausted retries; failure already recorded
+    }
   }
 }
