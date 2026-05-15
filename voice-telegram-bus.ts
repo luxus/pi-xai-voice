@@ -7,7 +7,8 @@
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { unlink } from "node:fs/promises";
-import { basename, extname, join } from "node:path";
+import { basename, dirname, extname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { randomBytes } from "node:crypto";
 import { piVoiceAdapterV1 } from "./voice-adapter.ts";
@@ -17,6 +18,118 @@ import { resolveXaiConfig } from "./xai-config.ts";
 // ─── Debug Logger ────────────────────────────────────────────────────────────
 
 const DEBUG_LOG_PATH = "/tmp/pi-xai-voice-debug.log";
+
+/**
+ * Loads the pi-telegram bridge module.
+ * In local development (especially ~/.pi/agents/... layout), it tries to find
+ * the sibling checkout first before falling back to normal package resolution.
+ *
+ * This is the main entry point for all Telegram bridge interaction from xai-voice.
+ */
+/**
+ * Walks upward from a starting directory, looking for a package.json
+ * whose name is "@llblab/pi-telegram" or a folder literally named "pi-telegram".
+ * This is much more robust than fixed relative paths.
+ */
+function findLocalPiTelegramRoot(startDir: string): string | null {
+  let dir = startDir;
+  const maxDepth = 15;
+
+  for (let i = 0; i < maxDepth; i++) {
+    // Check for package.json with the correct name
+    const pkgPath = join(dir, 'package.json');
+    if (existsSync(pkgPath)) {
+      try {
+        const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+        if (pkg.name === '@llblab/pi-telegram' || pkg.name === 'pi-telegram') {
+          return dir;
+        }
+      } catch {
+        // ignore bad package.json
+      }
+    }
+
+    // Also accept if the current folder itself is named "pi-telegram"
+    if (dir.endsWith('/pi-telegram') || dir.endsWith('\\pi-telegram')) {
+      return dir;
+    }
+
+    const parent = dirname(dir);
+    if (parent === dir) break; // reached filesystem root
+    dir = parent;
+  }
+
+  return null;
+}
+
+export async function loadPiTelegramBridge(options: {
+  agentsRoot?: string;
+  startDir?: string;
+} = {}): Promise<any> {
+  const { agentsRoot, startDir } = options;
+
+  // 1. Explicit agentsRoot (mainly for tests)
+  if (agentsRoot) {
+    const siblingIndex = join(agentsRoot, 'pi-telegram', 'index.ts');
+    if (existsSync(siblingIndex)) {
+      try {
+        return await import(siblingIndex);
+      } catch {}
+    }
+  }
+
+  const startFrom = startDir || dirname(fileURLToPath(import.meta.url));
+
+  // 2. Fast relative paths
+  const relativeCandidates = [
+    join(startFrom, '../pi-telegram/index.ts'),
+    join(startFrom, '../../pi-telegram/index.ts'),
+    join(startFrom, '../../../pi-telegram/index.ts'),
+    join(startFrom, '../../../../pi-telegram/index.ts'),
+  ];
+
+  for (const candidate of relativeCandidates) {
+    if (existsSync(candidate)) {
+      try {
+        return await import(candidate);
+      } catch {}
+    }
+  }
+
+  // 3. Explicit ~/.pi/agents detection (very common for luxus forks)
+  const agentsMatch = startFrom.match(/(.+?[\\/]\.pi[\\/]agents[\\/]git[\\/]github\.com[\\/]luxus)[\\/]pi-xai-voice/);
+  if (agentsMatch) {
+    const luxusRoot = agentsMatch[1];
+    const siblingIndex = join(luxusRoot, 'pi-telegram', 'index.ts');
+    if (existsSync(siblingIndex)) {
+      try {
+        return await import(siblingIndex);
+      } catch {}
+    }
+  }
+
+  // 4. Robust upward package.json / folder name walk
+  const root = findLocalPiTelegramRoot(startFrom);
+  if (root) {
+    const indexPath = join(root, 'index.ts');
+    if (existsSync(indexPath)) {
+      try {
+        return await import(indexPath);
+      } catch {}
+    }
+  }
+
+  // 5. Normal package resolution
+  try {
+    const mod = await import("@llblab/pi-telegram");
+    if (typeof mod.importPiTelegram === "function") {
+      return await mod.importPiTelegram();
+    }
+    return mod;
+  } catch {
+    throw new Error("Could not load pi-telegram bridge");
+  }
+}
 
 function debugLog(tag: string, message: string, extra?: unknown): void {
   const timestamp = new Date().toISOString();
@@ -316,13 +429,9 @@ function createOggOutputPath(originalMp3Path: string): string {
 }
 
 export async function registerXaiVoiceTelegramHandler(): Promise<void> {
-  // Use the official reliable loader from pi-telegram (handles local sibling dev)
   let piTelegram: any;
   try {
-    const mod = await import("@llblab/pi-telegram");
-    piTelegram = typeof mod.importPiTelegram === "function"
-      ? await mod.importPiTelegram()
-      : mod; // fallback for older bridge versions
+    piTelegram = await loadPiTelegramBridge();
   } catch {
     return;
   }
@@ -392,13 +501,9 @@ let sectionDisposer: (() => void) | undefined;
  * Skips if the section is already present in pi-telegram's registry.
  */
 export async function registerXaiVoiceTelegramSection(): Promise<void> {
-  // Use the official reliable loader from pi-telegram (handles local sibling dev)
   let piTelegram: any;
   try {
-    const mod = await import("@llblab/pi-telegram");
-    piTelegram = typeof mod.importPiTelegram === "function"
-      ? await mod.importPiTelegram()
-      : mod; // fallback for older bridge versions
+    piTelegram = await loadPiTelegramBridge();
   } catch {
     return;
   }
