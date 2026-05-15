@@ -432,7 +432,8 @@ function isVoiceSectionRegistered(): boolean {
 
 /**
  * Register a Voice Extension Section in pi-telegram's UI.
- * Provides toggles for reply mode, TTS voice, and speech style.
+ * Provides toggles for reply mode, TTS voice, language, speech style, and transcript.
+ * (Speech Tags explanation removed per user request)
  * Re-registers on every call — disposes the previous registration first.
  * Skips if the section is already present in pi-telegram's registry.
  */
@@ -474,7 +475,6 @@ export async function registerXaiVoiceTelegramSection(): Promise<void> {
                   ),
                 },
               ],
-              [{ text: "ℹ️ Speech Tags", callback_data: ctx.callbackData("helpTags") }],
             ],
           },
         };
@@ -501,7 +501,6 @@ export async function registerXaiVoiceTelegramSection(): Promise<void> {
                       ),
                     },
                   ],
-                  [{ text: "ℹ️ Speech Tags", callback_data: ctx.callbackData("helpTags") }],
                 ],
               },
             });
@@ -693,15 +692,8 @@ export async function registerXaiVoiceTelegramSection(): Promise<void> {
                       ),
                     },
                   ],
-                  [{ text: "ℹ️ Speech Tags", callback_data: ctx.callbackData("helpTags") }],
                 ],
               },
-            });
-            return "handled";
-          }
-          if (ctx.action === "helpTags") {
-            await ctx.edit({
-              text: `<b>🏷️ Speech Tags</b>\n\n<i>Make speech more expressive with inline tags.</i>\n\n<b>Inline tags</b> — placed at a specific point:\n• [pause] — brief pause\n• [long-pause] — longer pause\n• [laugh] — laugh\n• [sigh] — sigh\n• [gasp] — gasp\n\n<b>Wrapping tags</b> — wrap a section of text:\n• &lt;whisper&gt;text&lt;/whisper&gt; — whispered\n• &lt;slow&gt;text&lt;/slow&gt; — slower delivery\n• &lt;soft&gt;text&lt;/soft&gt; — softer volume\n• &lt;emphasis&gt;text&lt;/emphasis&gt; — emphasized\n\n<i>Example:</i> <code>So I walked in and [pause] there it was. [laugh] I honestly could not believe it! &lt;whisper&gt;It was a secret the whole time.&lt;/whisper&gt;</code>`,
             });
             return "handled";
           }

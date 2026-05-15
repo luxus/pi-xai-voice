@@ -1032,19 +1032,19 @@ const setVoiceIdTool = defineTool({
 
 export default function piXaiVoiceExtension(pi: ExtensionAPI): void {
   function registerVoiceTelegramBus(): void {
-    // Register voice outbound handler (function-based TTS backend).
+    // Register voice outbound handler (TTS)
     registerXaiVoiceTelegramHandler().catch(() => undefined);
-    // Register voice extension section (UI settings in Telegram /menu).
+    // Register Voice Extension Section (settings menu in Telegram)
     registerXaiVoiceTelegramSection().catch(() => undefined);
   }
 
   registerVoiceTelegramBus();
 
-  // Periodic re-registration to handle session-resume scenarios
-  // where pi-telegram may reset its registry but our extension is not reloaded.
+  // Light re-registration on session_start is sufficient thanks to `persistent: true`.
+  // The interval is kept as a very defensive fallback (can be removed later).
   setInterval(() => {
     registerVoiceTelegramBus();
-  }, 30_000);
+  }, 60_000);
 
   pi.on("session_start", async (_event, ctx) => {
     const runtime = createRuntime();
@@ -1057,6 +1057,7 @@ export default function piXaiVoiceExtension(pi: ExtensionAPI): void {
       speechStyle: runtime.defaults.speechStyle,
       sendTranscript: runtime.defaults.sendTranscript,
     });
+    // Re-register persistent voice provider after session resume
     registerVoiceTelegramBus();
     onVoiceConfigChanged((config) => {
       const currentPrefs = getActiveVoicePreferences();
