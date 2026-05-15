@@ -7,61 +7,12 @@
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { unlink } from "node:fs/promises";
-import { basename, dirname, extname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { basename, extname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomBytes } from "node:crypto";
 import { piVoiceAdapterV1 } from "./voice-adapter.ts";
 import { XAI_VOICE_IDS } from "./xai-voice.ts";
 import { resolveXaiConfig } from "./xai-config.ts";
-
-/**
- * Load the pi-telegram bridge.
- *
- * Resolution order (designed for manual testing on luxus forks):
- * 1. Normal package name (@llblab/pi-telegram) — works with `npm link` or proper installs
- * 2. Explicit local filesystem sibling: ../pi-telegram/index.ts (most common dev layout)
- * 3. ../../pi-telegram/index.ts (alternative folder layouts)
- *
- * This makes local development reliable when both repos are checked out as siblings.
- * The package-name path will be the only one used after the real upstream publish.
- * The filesystem fallbacks are temporary for the current manual-testing phase.
- */
-export async function importPiTelegram(): Promise<any> {
-  // 1. Preferred: normal package resolution (works when linked or installed)
-  try {
-    const mod = await import("@llblab/pi-telegram");
-    debugLog("bridge-import", "resolved via package name", { source: "@llblab/pi-telegram" });
-    return mod;
-  } catch {
-    // fall through to explicit filesystem paths for local sibling dev
-  }
-
-  const __dirname = dirname(fileURLToPath(import.meta.url));
-
-  // 2 + 3. Explicit local checkout (reliable when ~/projects/pi-xai-voice + ~/projects/pi-telegram)
-  const candidates = [
-    resolve(__dirname, "../pi-telegram/index.ts"),
-    resolve(__dirname, "../../pi-telegram/index.ts"),
-  ];
-
-  for (const candidate of candidates) {
-    try {
-      const mod = await import(candidate);
-      debugLog("bridge-import", "resolved via local filesystem", { source: candidate });
-      return mod;
-    } catch {
-      // try next candidate
-    }
-  }
-
-  debugLog("bridge-import", "failed to resolve pi-telegram bridge", { candidates });
-  throw new Error(
-    "Could not load @llblab/pi-telegram. " +
-      "For local development on luxus forks, place pi-telegram as a sibling folder " +
-      "or use `npm link @llblab/pi-telegram`."
-  );
-}
 
 // ─── Debug Logger ────────────────────────────────────────────────────────────
 
@@ -365,10 +316,13 @@ function createOggOutputPath(originalMp3Path: string): string {
 }
 
 export async function registerXaiVoiceTelegramHandler(): Promise<void> {
-  // Robust loader: prefers @llblab/pi-telegram, falls back to explicit ../pi-telegram/index.ts
+  // Use the official reliable loader from pi-telegram (handles local sibling dev)
   let piTelegram: any;
   try {
-    piTelegram = await importPiTelegram();
+    const mod = await import("@llblab/pi-telegram");
+    piTelegram = typeof mod.importPiTelegram === "function"
+      ? await mod.importPiTelegram()
+      : mod; // fallback for older bridge versions
   } catch {
     return;
   }
@@ -438,11 +392,13 @@ let sectionDisposer: (() => void) | undefined;
  * Skips if the section is already present in pi-telegram's registry.
  */
 export async function registerXaiVoiceTelegramSection(): Promise<void> {
-  // Robust loader: prefers @llblab/pi-telegram, falls back to explicit ../pi-telegram/index.ts
-  // This makes local testing on luxus forks reliable (both repos as siblings).
+  // Use the official reliable loader from pi-telegram (handles local sibling dev)
   let piTelegram: any;
   try {
-    piTelegram = await importPiTelegram();
+    const mod = await import("@llblab/pi-telegram");
+    piTelegram = typeof mod.importPiTelegram === "function"
+      ? await mod.importPiTelegram()
+      : mod; // fallback for older bridge versions
   } catch {
     return;
   }

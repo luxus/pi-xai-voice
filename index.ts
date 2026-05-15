@@ -53,7 +53,6 @@ import {
   type VoicePreferences,
 } from "./voice-settings.ts";
 import {
-  importPiTelegram,
   onVoiceConfigChanged,
   registerXaiVoiceTelegramHandler,
   registerXaiVoiceTelegramSection,
@@ -1056,10 +1055,12 @@ export default function piXaiVoiceExtension(pi: ExtensionAPI): void {
       sendTranscript: runtime.defaults.sendTranscript,
     });
     // Re-register via official helpers + always force direct registration.
-    // Uses importPiTelegram so we reliably get the local checkout (../pi-telegram/index.ts)
-    // during manual testing on luxus forks.
+    // Uses the reliable loader from pi-telegram (local sibling support for dev).
     try {
-      const piTelegram = await importPiTelegram();
+      const mod = await import("@llblab/pi-telegram");
+      const piTelegram = typeof mod.importPiTelegram === "function"
+        ? await mod.importPiTelegram()
+        : mod;
       piTelegram.reRegisterPersistentVoiceProviders?.();
       piTelegram.reRegisterPersistentSections?.();
     } catch {
@@ -1076,7 +1077,10 @@ export default function piXaiVoiceExtension(pi: ExtensionAPI): void {
     // notify via ctx.ui if Voice section fails to register or is non-active.
     // Complements /telegram-status events from recordTelegramRuntimeEvent.
     try {
-      const piTelegram = await importPiTelegram();
+      const mod = await import("@llblab/pi-telegram");
+      const piTelegram = typeof mod.importPiTelegram === "function"
+        ? await mod.importPiTelegram()
+        : mod;
       if (typeof piTelegram.getTelegramSectionDiagnostics === "function") {
         const diags = piTelegram.getTelegramSectionDiagnostics();
         const sectionDiag = diags.find((d: any) => d && d.id === "pi-xai-voice");
