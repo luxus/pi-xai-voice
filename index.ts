@@ -1055,12 +1055,8 @@ export default function piXaiVoiceExtension(pi: ExtensionAPI): void {
       sendTranscript: runtime.defaults.sendTranscript,
     });
     // Re-register via official helpers + always force direct registration.
-    // Uses the reliable loader from pi-telegram (local sibling support for dev).
     try {
-      const mod = await import("@llblab/pi-telegram");
-      const piTelegram = typeof mod.importPiTelegram === "function"
-        ? await mod.importPiTelegram()
-        : mod;
+      const piTelegram = await import("@llblab/pi-telegram");
       piTelegram.reRegisterPersistentVoiceProviders?.();
       piTelegram.reRegisterPersistentSections?.();
     } catch {
@@ -1077,10 +1073,7 @@ export default function piXaiVoiceExtension(pi: ExtensionAPI): void {
     // notify via ctx.ui if Voice section fails to register or is non-active.
     // Complements /telegram-status events from recordTelegramRuntimeEvent.
     try {
-      const mod = await import("@llblab/pi-telegram");
-      const piTelegram = typeof mod.importPiTelegram === "function"
-        ? await mod.importPiTelegram()
-        : mod;
+      const piTelegram = await import("@llblab/pi-telegram");
       if (typeof piTelegram.getTelegramSectionDiagnostics === "function") {
         const diags = piTelegram.getTelegramSectionDiagnostics();
         const sectionDiag = diags.find((d: any) => d && d.id === "pi-xai-voice");

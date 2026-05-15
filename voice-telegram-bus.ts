@@ -431,7 +431,8 @@ function createOggOutputPath(originalMp3Path: string): string {
 export async function registerXaiVoiceTelegramHandler(): Promise<void> {
   let piTelegram: any;
   try {
-    piTelegram = await loadPiTelegramBridge();
+    // Direct import (local folder installation)
+    piTelegram = await import("@llblab/pi-telegram");
   } catch {
     return;
   }
@@ -503,7 +504,8 @@ let sectionDisposer: (() => void) | undefined;
 export async function registerXaiVoiceTelegramSection(): Promise<void> {
   let piTelegram: any;
   try {
-    piTelegram = await loadPiTelegramBridge();
+    // Direct import (local folder installation)
+    piTelegram = await import("@llblab/pi-telegram");
   } catch {
     return;
   }
