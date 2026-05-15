@@ -422,14 +422,6 @@ export async function registerXaiVoiceTelegramHandler(): Promise<void> {
 
 let sectionDisposer: (() => void) | undefined;
 
-function isVoiceSectionRegistered(): boolean {
-  const registry = (globalThis as Record<string, unknown>).__piTelegramSectionRegistry__;
-  if (!registry || typeof registry !== "object") return false;
-  const sections =
-    (registry as { getSections?: () => Array<{ id: string }> }).getSections?.() ?? [];
-  return sections.some((s) => s.id === "pi-xai-voice");
-}
-
 /**
  * Register a Voice Extension Section in pi-telegram's UI.
  * Provides toggles for reply mode, TTS voice, language, speech style, and transcript.
@@ -438,7 +430,6 @@ function isVoiceSectionRegistered(): boolean {
  * Skips if the section is already present in pi-telegram's registry.
  */
 export async function registerXaiVoiceTelegramSection(): Promise<void> {
-  if (isVoiceSectionRegistered()) return;
   try {
     // Prefer clean static import (same pattern as the voice provider handler).
     let piTelegram: any;
@@ -706,8 +697,13 @@ export async function registerXaiVoiceTelegramSection(): Promise<void> {
     },
     { persistent: true }
   );
-  } catch {
-    // pi-telegram not available — voice works standalone without it.
-    // Silently skip. No dependency on pi-telegram.
+  } catch (err) {
+    // Record failure so it appears in /telegram-status
+    try {
+      const record = (globalThis as any).__piTelegramVoiceEventRecorder__;
+      if (typeof record === "function") {
+        record("xai-voice", err, { phase: "section-registration-failed" });
+      }
+    } catch {}
   }
 }
