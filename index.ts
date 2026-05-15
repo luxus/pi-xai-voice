@@ -53,6 +53,7 @@ import {
   type VoicePreferences,
 } from "./voice-settings.ts";
 import {
+  importPiTelegram,
   onVoiceConfigChanged,
   registerXaiVoiceTelegramHandler,
   registerXaiVoiceTelegramSection,
@@ -1054,17 +1055,15 @@ export default function piXaiVoiceExtension(pi: ExtensionAPI): void {
       speechStyle: runtime.defaults.speechStyle,
       sendTranscript: runtime.defaults.sendTranscript,
     });
-    // Re-register via official helpers (for persistent entries) + always force direct registration.
-    // This is aggressive/belt-and-suspenders: reRegister handles the happy path from persistent maps,
-    // but we also always call the direct register* functions so the section (menu) and provider
-    // are actively (re)registered against the live registry on every session_start.
-    // Guarantees the 🔊 Voice (x.ai) menu appears reliably even if initial load timing was early.
+    // Re-register via official helpers + always force direct registration.
+    // Uses importPiTelegram so we reliably get the local checkout (../pi-telegram/index.ts)
+    // during manual testing on luxus forks.
     try {
-      const piTelegram = await import("@llblab/pi-telegram");
+      const piTelegram = await importPiTelegram();
       piTelegram.reRegisterPersistentVoiceProviders?.();
       piTelegram.reRegisterPersistentSections?.();
     } catch {
-      // Import failed; fall back to direct which populates persistent + registers
+      // still try direct registration below
     }
 
     // Always attempt direct registration on session_start (safe, disposes previous).
@@ -1077,7 +1076,7 @@ export default function piXaiVoiceExtension(pi: ExtensionAPI): void {
     // notify via ctx.ui if Voice section fails to register or is non-active.
     // Complements /telegram-status events from recordTelegramRuntimeEvent.
     try {
-      const piTelegram = await import("@llblab/pi-telegram");
+      const piTelegram = await importPiTelegram();
       if (typeof piTelegram.getTelegramSectionDiagnostics === "function") {
         const diags = piTelegram.getTelegramSectionDiagnostics();
         const sectionDiag = diags.find((d: any) => d && d.id === "pi-xai-voice");
