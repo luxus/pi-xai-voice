@@ -30,7 +30,9 @@ import { resolveXaiConfig } from "./xai-config.ts";
 export async function importPiTelegram(): Promise<any> {
   // 1. Preferred: normal package resolution (works when linked or installed)
   try {
-    return await import("@llblab/pi-telegram");
+    const mod = await import("@llblab/pi-telegram");
+    debugLog("bridge-import", "resolved via package name", { source: "@llblab/pi-telegram" });
+    return mod;
   } catch {
     // fall through to explicit filesystem paths for local sibling dev
   }
@@ -45,12 +47,15 @@ export async function importPiTelegram(): Promise<any> {
 
   for (const candidate of candidates) {
     try {
-      return await import(candidate);
+      const mod = await import(candidate);
+      debugLog("bridge-import", "resolved via local filesystem", { source: candidate });
+      return mod;
     } catch {
       // try next candidate
     }
   }
 
+  debugLog("bridge-import", "failed to resolve pi-telegram bridge", { candidates });
   throw new Error(
     "Could not load @llblab/pi-telegram. " +
       "For local development on luxus forks, place pi-telegram as a sibling folder " +
