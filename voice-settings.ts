@@ -30,10 +30,10 @@ export interface VoicePreferences {
   liveTranscriptPollingMs: number;
   liveTranscriptGhostText: boolean;
   tagAmount: VoiceTagAmount;
-  replyMode?: "mirror" | "voice" | "manual";
   speechStyle?: "literal" | "rewrite-light" | "rewrite-tags";
   defaultLanguage?: string;
   sendTranscript?: boolean;
+  telegramEnabled: boolean;
 }
 
 export const DEFAULT_VOICE_SHORTCUT = "alt+m";
@@ -45,10 +45,10 @@ export const DEFAULT_LIVE_TRANSCRIPT_ENABLED = true;
 export const DEFAULT_LIVE_TRANSCRIPT_POLL_MS = 1000;
 export const DEFAULT_LIVE_TRANSCRIPT_GHOST_TEXT = true;
 export const DEFAULT_TAG_AMOUNT: VoiceTagAmount = "moderate";
-export const DEFAULT_VOICE_REPLY_MODE: VoicePreferences["replyMode"] = "mirror";
 export const DEFAULT_VOICE_SPEECH_STYLE: VoicePreferences["speechStyle"] = "literal";
 export const DEFAULT_VOICE_DEFAULT_LANGUAGE = "auto";
 export const DEFAULT_VOICE_SEND_TRANSCRIPT = false;
+export const DEFAULT_XAI_TELEGRAM_PROVIDER_ENABLED = true;
 
 export const VOICE_SHORTCUT_MODE_VALUES: VoiceShortcutMode[] = ["push-to-talk", "toggle"];
 export const VOICE_TTS_QUALITY_VALUES: VoiceTtsQuality[] = ["low", "medium", "high"];
@@ -117,14 +117,6 @@ function isTagAmount(value: string | undefined): value is VoiceTagAmount {
   return value === "minimal" || value === "moderate" || value === "expressive";
 }
 
-function migrateReplyMode(value: string | undefined): VoicePreferences["replyMode"] | undefined {
-  if (value === "mirror" || value === "voice" || value === "manual") return value;
-  if (value === "voice-received") return "mirror";
-  if (value === "always") return "voice";
-  if (value === "on-request") return "manual";
-  return undefined;
-}
-
 function isSpeechStyle(value: string | undefined): value is VoicePreferences["speechStyle"] {
   return value === "literal" || value === "rewrite-light" || value === "rewrite-tags";
 }
@@ -140,10 +132,10 @@ export function resolveVoicePreferences(voiceConfig: Record<string, unknown>): V
   const liveTranscriptPollingMs = getNumber(voiceConfig, "liveTranscriptPollingMs");
   const liveTranscriptGhostText = getBoolean(voiceConfig, "liveTranscriptGhostText");
   const tagAmount = getString(voiceConfig, "tagAmount");
-  const replyMode = getString(voiceConfig, "replyMode");
   const speechStyle = getString(voiceConfig, "speechStyle");
   const defaultLanguage = getString(voiceConfig, "defaultLanguage");
   const sendTranscript = getBoolean(voiceConfig, "sendTranscript");
+  const telegramEnabled = getBoolean(voiceConfig, "telegramEnabled");
 
   return {
     voiceId: isVoiceId(voiceId) ? voiceId : DEFAULT_XAI_VOICE_ID,
@@ -165,11 +157,14 @@ export function resolveVoicePreferences(voiceConfig: Record<string, unknown>): V
         ? liveTranscriptGhostText
         : DEFAULT_LIVE_TRANSCRIPT_GHOST_TEXT,
     tagAmount: isTagAmount(tagAmount) ? tagAmount : DEFAULT_TAG_AMOUNT,
-    replyMode: migrateReplyMode(replyMode) || DEFAULT_VOICE_REPLY_MODE,
     speechStyle: isSpeechStyle(speechStyle) ? speechStyle : DEFAULT_VOICE_SPEECH_STYLE,
     defaultLanguage: defaultLanguage || DEFAULT_VOICE_DEFAULT_LANGUAGE,
     sendTranscript:
       typeof sendTranscript === "boolean" ? sendTranscript : DEFAULT_VOICE_SEND_TRANSCRIPT,
+    telegramEnabled:
+      typeof telegramEnabled === "boolean"
+        ? telegramEnabled
+        : DEFAULT_XAI_TELEGRAM_PROVIDER_ENABLED,
   };
 }
 
@@ -215,10 +210,11 @@ export function saveVoicePreferences(
   voice.liveTranscriptPollingMs = prefs.liveTranscriptPollingMs;
   voice.liveTranscriptGhostText = prefs.liveTranscriptGhostText;
   voice.tagAmount = prefs.tagAmount;
-  if (prefs.replyMode) voice.replyMode = prefs.replyMode;
+  delete voice.replyMode;
   if (prefs.speechStyle) voice.speechStyle = prefs.speechStyle;
   if (prefs.defaultLanguage) voice.defaultLanguage = prefs.defaultLanguage;
   voice.sendTranscript = prefs.sendTranscript;
+  voice.telegramEnabled = prefs.telegramEnabled;
 
   xai.voice = voice;
   root.xai = xai;

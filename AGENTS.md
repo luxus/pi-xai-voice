@@ -259,8 +259,8 @@ Config sources (priority order):
 ### 6.4 Entrypoint And Import Boundaries
 
 - Keep voice synthesis logic in `voice-adapter.ts` and `xai-voice.ts`, not in `index.ts`
-- Keep pi-telegram interop strictly in `voice-telegram-bus.ts` with zero-coupling via `globalThis` registries
-- Do not import from `pi-telegram` directly; use dynamic imports with fallback paths for git-installed extensions
+- Keep pi-telegram interop strictly in `voice-telegram-bus.ts` with zero-coupling through pi-telegram's public subpath APIs, not direct `globalThis` registry mutation
+- Do not statically import from `pi-telegram`; use dynamic imports with fallback paths for git-installed extensions
 
 ## 7. Operational Conventions
 
@@ -273,12 +273,13 @@ Config sources (priority order):
 
 ### pi-telegram Voice Integration
 
-- pi-xai-voice registers a voice outbound handler dynamically via `registerTelegramOutboundHandler("voice", ...)`
-- Zero-coupling: reads existing `globalThis` registries created by pi-telegram; does NOT create registries
-- The handler template uses runtime-computed paths (`process.execPath` + `import.meta.url`) for portability
-- Transparent voice is handled by pi-telegram's `wasVoice` tracking; pi-xai-voice does not need a voicePreferred toggle
-- TTS voice and speech tag amount preferences are registered via the preference bus and appear in Telegram `/settings`
-- Guidance text prevents the LLM from using `text_to_speech` or `telegram_attach` tools
+- pi-xai-voice registers a voice synthesis provider dynamically via `registerTelegramVoiceSynthesisProvider()` from `@llblab/pi-telegram/lib/voice.ts` and a voice transcription provider via `registerTelegramVoiceTranscriptionProvider()` when pi-telegram is available
+- Zero-coupling: uses pi-telegram's public subpath registration APIs; does NOT create or mutate pi-telegram `globalThis` registries directly
+- The provider owns xAI TTS, speech rewriting, transcript choice, and OGG/Opus conversion before returning `{ audioPath, transcriptText? }`
+- Transparent voice is handled by pi-telegram's `voice.replyMode` policy; pi-xai-voice never reads, persists, or presents duplicate reply-mode controls
+- Telegram main-menu label shows `🎙️ xAI Voice: on/off`; the first xAI Voice submenu row toggles `xai.voice.telegramEnabled`, which opts the TTS and STT providers in or out without removing the section
+- Reply-mode prompt context belongs to pi-telegram; pi-xai-voice should not inject per-message voice-mode instructions through provider prompt contributions
+- Reply-mode writes belong to pi-telegram Settings and `telegram.json`; pi-xai-voice provider settings must not write `voice.replyMode`
 
 ### Syncing with Upstream (pi-xai-imagine)
 
