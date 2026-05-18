@@ -1,6 +1,6 @@
 {
   "name": "pi-xai-voice",
-  "version": "0.3.0",
+  "version": "0.5.0",
   "description": "Pi extension for xAI voice and audio workflows",
   "keywords": [
     "pi-package"
@@ -27,6 +27,7 @@
     "check:ci": "npm run check"
   },
   "dependencies": {
+    "pi-xai": "^0.7.1",
     "typebox": "1.1.37"
   },
   "devDependencies": {

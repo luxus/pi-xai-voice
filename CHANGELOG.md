@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.5.0: Grok Build OAuth Integration
+
+### Changed
+
+- `pi-xai-voice` now prefers Grok Build / Coding Plan OAuth credentials from the main `pi-xai` extension (after running `/login grok-build`).
+- Credential resolution in execution paths (`transcribe`, `synthesize`) now delegates to the shared `getRequiredXaiApiKey()` from `pi-xai` when available. This gives automatic JWT refresh, token rotation, and fallback to `~/.grok/auth.json` or `XAI_API_KEY`.
+- The voice adapter (`voice-adapter.ts`) execution methods now use the preferred async resolver while keeping `isAvailable()` and `getDefaults()` on the lightweight sync path for compatibility with the Pi voice provider interface.
+
+### Added
+
+- Clear separation between sync (registration surface) and async (actual API calls) credential helpers.
+- Documentation and code comments explaining the OAuth preference from the main `pi-xai` package.
+
+This release prepares `pi-xai-voice` to work seamlessly with the Grok Build authentication flow provided by the main `pi-xai` extension.
+
 ## 0.3.0: pi-telegram 0.11 Voice Provider API
 
 ### Changed
