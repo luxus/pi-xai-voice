@@ -53,6 +53,7 @@ import {
   type VoicePreferences,
 } from "./voice-settings.ts";
 import {
+  loadPiTelegramSubmodule,
   onVoiceConfigChanged,
   registerXaiVoiceTelegramHandler,
   registerXaiVoiceTelegramSection,
@@ -1067,7 +1068,7 @@ export default function piXaiVoiceExtension(pi: ExtensionAPI): void {
     // notify via ctx.ui if Voice section fails to register or is non-active.
     // Complements /telegram-status events from recordTelegramRuntimeEvent.
     try {
-      const piTelegram: any = await import("@llblab/pi-telegram/lib/extension-sections.ts");
+      const piTelegram: any = await loadPiTelegramSubmodule("extension-sections");
       if (typeof piTelegram.getTelegramSectionDiagnostics === "function") {
         const diags = piTelegram.getTelegramSectionDiagnostics();
         const sectionDiag = diags.find((d: any) => d && d.id === "pi-xai-voice");
@@ -1187,6 +1188,14 @@ export default function piXaiVoiceExtension(pi: ExtensionAPI): void {
 
       const path = saveVoicePreferences(ctx.cwd, updated.preferences, updated.scope);
       setActiveVoicePreferences(updated.preferences);
+      // Sync to Telegram provider config so getVoiceConfig() sees TUI changes without restart
+      setVoiceConfig({
+        defaultVoice: updated.preferences.voiceId,
+        defaultLanguage: updated.preferences.defaultLanguage,
+        speechStyle: updated.preferences.speechStyle,
+        sendTranscript: updated.preferences.sendTranscript,
+        telegramEnabled: updated.preferences.telegramEnabled,
+      });
       ctx.ui.notify(`Voice settings saved (${updated.scope}) to ${path}`, "info");
     },
   });
