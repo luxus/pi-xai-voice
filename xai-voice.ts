@@ -22,6 +22,67 @@ export const XAI_STT_ENCODINGS = new Set(["pcm", "mulaw", "alaw"]);
 export const XAI_AUDIO_SAMPLE_RATES = new Set([8000, 16000, 22050, 24000, 44100, 48000]);
 export const XAI_MP3_BIT_RATES = new Set([32000, 64000, 96000, 128000, 192000]);
 
+/**
+ * Applies xAI-recommended best practices (or minimal cleanup) for writing text that sounds
+ * natural when spoken by xAI TTS.
+ *
+ * - For `literal`: only safe normalization (smart quotes/dashes/ellipsis, punctuation spacing, whitespace).
+ *   This is "minimal cleanup only" as documented for the literal speech style.
+ * - For `rewrite-light` or `rewrite-tags`: full best practices including light emotional emphasis (!)
+ *   and paragraph breaks (~every 3 sentences) for improved prosody.
+ *
+ * Spacing and emotional rules target Latin/ASCII prose (matching the word list and common TTS input).
+ *
+ * This is the *canonical* implementation, used by the `format_text_for_tts` rich tool and
+ * by the pi-telegram voice rewrite pipeline (before the style-specific contraction/tag steps).
+ *
+ * These rules come from the official xAI Voice documentation and significantly improve
+ * pacing, intonation, and emotional delivery.
+ */
+export function formatTextForTts(
+  text: string,
+  style: "literal" | "rewrite-light" | "rewrite-tags" = "rewrite-light",
+): string {
+  let t = text.trim();
+
+  // Normalize smart quotes, dashes, and ellipsis for better prosody (safe for all styles)
+  t = t
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/–/g, "-")
+    .replace(/\.\.\./g, "…");
+
+  // Ensure proper spacing after sentence-ending punctuation (safe cleanup)
+  t = t.replace(/([.!?])([A-Za-z“”‘’])/g, "$1 $2");
+
+  if (style !== "literal") {
+    // Add emotional context lightly (exclamation for strong positive/negative words)
+    t = t
+      .replace(/\b(amazing|incredible|fantastic|awesome|wow|unbelievable)\b(?![.!?])/gi, "$1!")
+      .replace(/\b(terrible|awful|horrible|disgusting|shocking)\b(?![.!?])/gi, "$1!");
+
+    // Break long text into paragraphs (roughly every 2–3 sentences)
+    // This helps the model keep consistent intonation and natural pauses.
+    // Simple syntactic counter; titles ("Dr."), abbrevs ("e.g."), decimals may add extra breaks.
+    let sentenceCount = 0;
+    t = t.replace(/([.!?])\s+/g, (match, p1) => {
+      sentenceCount++;
+      if (sentenceCount % 3 === 0) {
+        return p1 + "\n\n";
+      }
+      return match;
+    });
+  }
+
+  // Collapse excessive whitespace/newlines (always)
+  t = t
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  return t;
+}
+
 export interface TextToSpeechOutputFormat {
   codec?: string;
   sampleRate?: number;

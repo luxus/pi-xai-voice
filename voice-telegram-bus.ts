@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { randomBytes } from "node:crypto";
 import { piVoiceAdapterV1 } from "./voice-adapter.ts";
-import { DEFAULT_XAI_VOICE_ID, XAI_VOICE_IDS } from "./xai-voice.ts";
+import { DEFAULT_XAI_VOICE_ID, XAI_VOICE_IDS, formatTextForTts } from "./xai-voice.ts";
 import { resolveXaiConfig } from "./xai-config.ts";
 
 /**
@@ -220,6 +220,17 @@ export function onVoiceConfigChanged(callback: (config: PiTelegramVoiceConfig) =
 
 // ─── Text Rewriting for Speech ─────────────────────────────────────────────
 
+/**
+ * Applies xAI-recommended best practices for writing effective TTS text.
+ * Delegates to the canonical `formatTextForTts` (from xai-voice.ts) for implementation.
+ * Kept for backward compatibility with any external importers.
+ */
+export function applyTtsWritingBestPractices(text: string): string {
+  // For non-literal rewrite modes the style-specific steps (contractions, tags)
+  // are still applied by rewriteForSpeech after this base formatting step.
+  return formatTextForTts(text, "rewrite-light");
+}
+
 function rewriteLight(text: string): string {
   return text
     .replace(/\bdon't\b/gi, "don't")
@@ -289,15 +300,19 @@ export function stripSpeechTags(text: string): string {
 }
 
 function rewriteForSpeech(text: string, style: PiTelegramVoiceConfig["speechStyle"]): string {
+  // Canonical formatter handles literal (minimal cleanup) vs rewrite modes (full best practices).
+  // Additional contractions (rewrite-light) and speech tags (rewrite-tags) are layered on top.
+  const processed = formatTextForTts(text, style);
+
   switch (style) {
     case "literal":
-      return text;
+      return processed;
     case "rewrite-light":
-      return rewriteLight(text);
+      return rewriteLight(processed);
     case "rewrite-tags":
-      return addSpeechTags(rewriteLight(text));
+      return addSpeechTags(rewriteLight(processed));
     default:
-      return text;
+      return processed;
   }
 }
 
@@ -678,16 +693,20 @@ export async function registerXaiVoiceTelegramSection(
               label: string;
               desc: string;
             }[] = [
-              { value: "literal", label: "Literal", desc: "Read text exactly as written" },
+              {
+                value: "literal",
+                label: "Literal",
+                desc: "Read text exactly as written (minimal cleanup only)",
+              },
               {
                 value: "rewrite-light",
                 label: "Light rewrite",
-                desc: "Slight naturalization of text",
+                desc: "xAI best practices: natural punctuation, emotional context, paragraph breaks + contractions",
               },
               {
                 value: "rewrite-tags",
                 label: "Rewrite with tags",
-                desc: "Add speech tags for expression",
+                desc: "Best practices + automatic [pause], <whisper>, [laugh], etc. for expressive delivery",
               },
             ];
 
@@ -698,7 +717,7 @@ export async function registerXaiVoiceTelegramSection(
 
             const config = getVoiceConfig();
             await ctx.edit({
-              text: `<b>✨ Speech Style</b>\n\n<i>How should the bot speak?</i>\n\nCurrent: <code>${config.speechStyle}</code>\n\n<b>Literal</b> — read text exactly as written\n<b>Light rewrite</b> — slight naturalization of text\n<b>Rewrite with tags</b> — add speech tags for expression`,
+              text: `<b>✨ Speech Style</b>\n\n<i>How should the bot speak?</i>\n\nCurrent: <code>${config.speechStyle}</code>\n\n<b>Literal</b> — read text exactly as written (minimal changes)\n<b>Light rewrite</b> — applies xAI writing best practices (natural punctuation, emotional cues, paragraph breaks) + contractions\n<b>Rewrite with tags</b> — best practices + automatic speech tags for expression`,
               replyMarkup: {
                 inline_keyboard: styles.map((s) => [
                   {

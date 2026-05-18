@@ -3,6 +3,24 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { XAI_API_BASE } from "./xai-media-shared.ts";
 
+// We do NOT want a hard dependency on pi-xai.
+// We only want to use its superior credential resolver (Grok Build OAuth) if it is installed.
+let getEffectiveFromMain: any = null;
+
+async function loadMainPiXaiResolver() {
+  if (getEffectiveFromMain !== null) {
+    return getEffectiveFromMain;
+  }
+  try {
+    // Dynamic import so the extension can still load when pi-xai is not present
+    const mod = await import("pi-xai");
+    getEffectiveFromMain = mod.getEffectiveXaiApiKey;
+  } catch {
+    getEffectiveFromMain = undefined; // permanently mark as unavailable
+  }
+  return getEffectiveFromMain;
+}
+
 type JsonPrimitive = null | boolean | number | string;
 type JsonValue = JsonPrimitive | JsonRecord | JsonValue[];
 interface JsonRecord {
@@ -109,7 +127,9 @@ export function resolveXaiConfig(): ResolvedXaiConfig {
   };
 }
 
-export function getRequiredXaiApiKey(config = resolveXaiConfig()): {
+// Sync version (used by voice adapter and isAvailable checks).
+// Does not yet support the main pi-xai OAuth — only the async version does.
+export function getRequiredXaiApiKeySync(config = resolveXaiConfig()): {
   apiKey: string;
   source: string;
   config: ResolvedXaiConfig;
@@ -118,7 +138,7 @@ export function getRequiredXaiApiKey(config = resolveXaiConfig()): {
   if (!apiKey) {
     const paths = getPiSettingsPaths();
     throw new Error(
-      `Missing xAI API key. Set XAI_API_KEY or configure xai.apiKey in ${paths.project} or ${paths.user}.`,
+      `Missing xAI API key. Run \`/login grok-build\` (recommended), set XAI_API_KEY, or configure xai.apiKey in ${paths.project} or ${paths.user}.`,
     );
   }
   return {
@@ -126,4 +146,31 @@ export function getRequiredXaiApiKey(config = resolveXaiConfig()): {
     source: config.apiKeySource || "config:xai.apiKey",
     config,
   };
+}
+
+// Async version that prefers Grok Build OAuth from the main pi-xai extension.
+export async function getRequiredXaiApiKey(): Promise<{
+  apiKey: string;
+  source: string;
+  config: ResolvedXaiConfig;
+}> {
+  const resolver = await loadMainPiXaiResolver();
+
+  if (resolver) {
+    try {
+      const effective = await resolver();
+      if (effective?.apiKey) {
+        const config = resolveXaiConfig();
+        return {
+          apiKey: effective.apiKey,
+          source: effective.source || "grok-build-oauth",
+          config,
+        };
+      }
+    } catch {
+      // Fall back to local logic
+    }
+  }
+
+  return getRequiredXaiApiKeySync();
 }

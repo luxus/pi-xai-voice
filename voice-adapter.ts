@@ -1,6 +1,9 @@
 import { basename } from "node:path";
 import { XaiClient } from "./xai-client.ts";
-import { getRequiredXaiApiKey } from "./xai-config.ts";
+import {
+  getRequiredXaiApiKey, // async, prefers main pi-xai OAuth
+  getRequiredXaiApiKeySync, // sync fallback for registration surface
+} from "./xai-config.ts";
 import {
   DEFAULT_XAI_VOICE_ID,
   DEFAULT_XAI_VOICE_LANGUAGE,
@@ -93,8 +96,8 @@ export const XAI_ALLOWED_SPEECH_TAGS = [
   ...XAI_WRAPPER_SPEECH_TAGS.map((tag) => `<${tag}>...</${tag}>`),
 ];
 
-function createRuntime() {
-  const { apiKey, config } = getRequiredXaiApiKey();
+async function createRuntime() {
+  const { apiKey, config } = await getRequiredXaiApiKey();
   return {
     config,
     client: new XaiClient({ apiKey, baseUrl: config.xai.baseUrl }),
@@ -116,14 +119,14 @@ export const piVoiceAdapterV1: PiVoiceAdapterV1 = {
   allowedTags: [...XAI_ALLOWED_SPEECH_TAGS],
   isAvailable() {
     try {
-      getRequiredXaiApiKey();
+      getRequiredXaiApiKeySync();
       return true;
     } catch {
       return false;
     }
   },
   getDefaults() {
-    const { config } = createRuntime();
+    const { config } = getRequiredXaiApiKeySync();
     return {
       voiceId: getString(config.xai.voice.defaultVoice) || DEFAULT_XAI_VOICE_ID,
       language: getString(config.xai.voice.defaultLanguage) || DEFAULT_XAI_VOICE_LANGUAGE,
@@ -131,7 +134,7 @@ export const piVoiceAdapterV1: PiVoiceAdapterV1 = {
     };
   },
   async transcribe(input) {
-    const { client } = createRuntime();
+    const { client } = await createRuntime();
     const result = await speechToTextWithXai(client, {
       file: input.filePath,
       language: input.language,
@@ -143,7 +146,7 @@ export const piVoiceAdapterV1: PiVoiceAdapterV1 = {
     };
   },
   async synthesize(input) {
-    const { client } = createRuntime();
+    const { client } = await createRuntime();
     const result = await textToSpeechWithXai(client, {
       text: input.text,
       voiceId: input.voiceId,

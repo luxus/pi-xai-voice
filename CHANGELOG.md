@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.5.1: TTS Formatter Tool & Voice Style Integration
+
+### Added
+
+- `format_text_for_tts` rich tool (and canonical `formatTextForTts(text, style?)` export from `xai-voice.ts`) that prepares arbitrary text for high-quality xAI TTS.
+  - `literal`: minimal safe cleanup (smart quotes/dashes/ellipsis normalization, punctuation spacing, whitespace collapse).
+  - `rewrite-light` / `rewrite-tags`: full xAI best practices (the above + light emotional `!` emphasis on strong words + paragraph breaks every ~3 sentences for natural prosody and pacing).
+- The tool is now fully wired (respects `style`, has `promptSnippet` for agent discoverability) and documented so agents can call `format_text_for_tts` before `text_to_speech` when the source text is LLM-generated or long-form.
+- `formatTextForTts` is the single source of truth; the pi-telegram voice pipeline (`rewriteForSpeech` for all three `speechStyle` modes) now delegates to it. This deduplicates the best-practices logic while preserving exact output for `rewrite-*` modes and giving `literal` the documented "minimal cleanup".
+
+### Changed
+
+- `applyTtsWritingBestPractices` (still exported from `voice-telegram-bus.ts` for compat) now delegates to `formatTextForTts`.
+- Speech style descriptions in the Telegram Voice settings UI already reflected the best-practices behavior; the implementation now matches the docs for `literal` as well.
+- Bumped package version to 0.5.1.
+
+This release makes high-quality TTS text preparation a first-class, reusable capability both for direct tool callers and for the Telegram voice bridge.
+
 ## 0.5.0: Grok Build OAuth Integration
 
 ### Changed

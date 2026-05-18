@@ -15,7 +15,11 @@ import {
   type LocalRecording,
 } from "./local-audio.ts";
 import { VoicePushToTalkEditor } from "./voice-editor.ts";
-import { getRequiredXaiApiKey, type ResolvedXaiConfig } from "./xai-config.ts";
+import {
+  getRequiredXaiApiKey,
+  getRequiredXaiApiKeySync,
+  type ResolvedXaiConfig,
+} from "./xai-config.ts";
 import { summarizeError, type XaiMediaLogger } from "./xai-media-shared.ts";
 import {
   DEFAULT_REALTIME_TOKEN_TTL_SECONDS,
@@ -28,6 +32,7 @@ import {
   listTextToSpeechVoicesWithXai,
   realtimeVoiceTextTurnWithXai,
   speechToTextWithXai,
+  formatTextForTts,
   textToSpeechWithXai,
 } from "./xai-voice.ts";
 import {
@@ -127,7 +132,7 @@ function renderListeningMeter(level: number): string {
 
 function getActiveVoicePreferences(): VoicePreferences {
   if (activeVoicePreferences) return activeVoicePreferences;
-  const { config } = getRequiredXaiApiKey();
+  const { config } = getRequiredXaiApiKeySync();
   activeVoicePreferences = resolveVoicePreferences(config.xai.voice);
   return activeVoicePreferences;
 }
@@ -175,7 +180,7 @@ function createLogger(): XaiMediaLogger {
   return {};
 }
 
-function createRuntime(log = createLogger()): {
+async function createRuntime(log = createLogger()): Promise<{
   apiKey: string;
   apiKeySource: string;
   config: ResolvedXaiConfig;
@@ -199,8 +204,8 @@ function createRuntime(log = createLogger()): {
     sendTranscript?: boolean;
     telegramEnabled: boolean;
   };
-} {
-  const { apiKey, source, config } = getRequiredXaiApiKey();
+}> {
+  const { apiKey, source, config } = await getRequiredXaiApiKey();
   const voiceConfig = config.xai.voice;
   const preferences = resolveVoicePreferences(voiceConfig);
   const defaultVoice =
@@ -263,7 +268,7 @@ function createRuntime(log = createLogger()): {
 }
 
 async function runXaiVoiceHealthCheck() {
-  const runtime = createRuntime();
+  const runtime = await createRuntime();
   const health = await runtime.client.checkHealth(runtime.log);
   return {
     ...health,
@@ -465,7 +470,7 @@ async function startVoicePreviewPlayback(
   previewUrl: string,
   _ctx: VoiceCommandContext,
 ): Promise<VoicePreviewHandle> {
-  const runtime = createRuntime();
+  const runtime = await createRuntime();
   const filePath = createLocalAudioTempPath("voice-preview", inferPreviewExtension(previewUrl));
   const controller = new AbortController();
   let previewPlayback: ChildProcess | undefined;
@@ -506,7 +511,7 @@ async function startVoicePreviewPlayback(
 }
 
 async function speakText(text: string, ctx: VoiceCommandContext): Promise<void> {
-  const runtime = createRuntime();
+  const runtime = await createRuntime();
   const outputFormat = TTS_QUALITY_PRESETS[runtime.defaults.ttsQuality];
   ctx.ui.setStatus("xai-voice-speak", "Generating speech...");
   try {
@@ -601,7 +606,7 @@ async function pollLiveTranscript(
   }
 
   try {
-    const runtime = createRuntime();
+    const runtime = await createRuntime();
     const result = await speechToTextWithXai(
       runtime.client,
       {
@@ -663,7 +668,7 @@ async function startVoiceCapture(ctx: VoiceCommandContext): Promise<void> {
   }
   if (activeRecording) return;
 
-  const runtime = createRuntime();
+  const runtime = await createRuntime();
   if (!runtime.defaults.sttEnabled) {
     ctx.ui.notify("Speech-to-text disabled. Enable it in /xai-voice-settings.", "warning");
     return;
@@ -710,7 +715,7 @@ async function stopVoiceCapture(ctx: VoiceCommandContext): Promise<void> {
 
   try {
     const stopped = await stopMicrophoneRecording(recording);
-    const runtime = createRuntime();
+    const runtime = await createRuntime();
     const result = await speechToTextWithXai(
       runtime.client,
       {
@@ -794,7 +799,7 @@ const textToSpeechTool = defineTool({
     fileName: Type.Optional(Type.String({ description: "Optional output filename stem." })),
   }),
   async execute(_toolCallId, params, _signal, onUpdate) {
-    const runtime = createRuntime();
+    const runtime = await createRuntime();
     onUpdate?.({
       content: [{ type: "text", text: "Generating speech with xAI..." }],
       details: { status: "running" },
@@ -839,7 +844,7 @@ const listTtsVoicesTool = defineTool({
   promptSnippet: "list_tts_voices() -> available xAI voice ids and descriptions",
   parameters: Type.Object({}),
   async execute() {
-    const runtime = createRuntime();
+    const runtime = await createRuntime();
     const result = await listTextToSpeechVoicesWithXai(runtime.client, runtime.log);
     return {
       content: [{ type: "text", text: voicesSummary(result.voices) }],
@@ -891,7 +896,7 @@ const speechToTextTool = defineTool({
     diarize: Type.Optional(Type.Boolean({ description: "Enable speaker diarization." })),
   }),
   async execute(_toolCallId, params, _signal, onUpdate) {
-    const runtime = createRuntime();
+    const runtime = await createRuntime();
     onUpdate?.({
       content: [{ type: "text", text: "Transcribing audio with xAI..." }],
       details: { status: "running" },
@@ -917,7 +922,7 @@ const createRealtimeClientSecretTool = defineTool({
     ),
   }),
   async execute(_toolCallId, params) {
-    const runtime = createRuntime();
+    const runtime = await createRuntime();
     const result = await createRealtimeClientSecretWithXai(
       runtime.client,
       {
@@ -969,7 +974,7 @@ const realtimeVoiceTextTurnTool = defineTool({
     ),
   }),
   async execute(_toolCallId, params, _signal, onUpdate) {
-    const runtime = createRuntime();
+    const runtime = await createRuntime();
     onUpdate?.({
       content: [{ type: "text", text: "Opening xAI realtime voice session..." }],
       details: { status: "running" },
@@ -989,6 +994,32 @@ const realtimeVoiceTextTurnTool = defineTool({
     return {
       content: [{ type: "text", text: realtimeSummary(result) }],
       details: result,
+    };
+  },
+});
+
+const formatTextForTtsTool = defineTool({
+  name: "format_text_for_tts",
+  label: "format_text_for_tts",
+  description:
+    "Format text using xAI best practices for natural TTS (punctuation, emotional context, paragraph breaks for rewrite modes). Supports style for aggressiveness: literal (minimal cleanup), rewrite-light or rewrite-tags (full best practices). Great before text_to_speech when input comes from LLMs or long content.",
+  promptSnippet:
+    "format_text_for_tts(text, style?) -> text ready for xAI TTS (literal | rewrite-light | rewrite-tags)",
+  parameters: Type.Object({
+    text: Type.String({ description: "The text to prepare for speech" }),
+    style: Type.Optional(
+      Type.Union(
+        [Type.Literal("literal"), Type.Literal("rewrite-light"), Type.Literal("rewrite-tags")],
+        { description: "How aggressively to rewrite. Default: rewrite-light" },
+      ),
+    ),
+  }),
+  async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+    const style = params.style ?? "rewrite-light";
+    const formatted = formatTextForTts(params.text, style);
+    return {
+      content: [{ type: "text", text: `**Formatted for TTS (${style}):**\n\n${formatted}` }],
+      details: { style, formatted },
     };
   },
 });
@@ -1048,7 +1079,7 @@ export default function piXaiVoiceExtension(pi: ExtensionAPI): void {
   registerVoiceTelegramBus();
 
   pi.on("session_start", async (_event, ctx) => {
-    const runtime = createRuntime();
+    const runtime = await createRuntime();
     setActiveVoicePreferences(runtime.defaults);
     // Sync Pi voice settings with Telegram shared config
     setVoiceConfig({
@@ -1122,6 +1153,7 @@ export default function piXaiVoiceExtension(pi: ExtensionAPI): void {
   pi.registerTool(textToSpeechTool);
   pi.registerTool(listTtsVoicesTool);
   pi.registerTool(speechToTextTool);
+  pi.registerTool(formatTextForTtsTool);
   pi.registerTool(createRealtimeClientSecretTool);
   pi.registerTool(realtimeVoiceTextTurnTool);
   pi.registerTool(checkXaiVoiceHealthTool);
@@ -1154,7 +1186,7 @@ export default function piXaiVoiceExtension(pi: ExtensionAPI): void {
         return;
       }
 
-      const runtime = createRuntime();
+      const runtime = await createRuntime();
       const current = runtime.defaults;
       let voices: Awaited<ReturnType<typeof listTextToSpeechVoicesWithXai>>["voices"] = [];
       try {
