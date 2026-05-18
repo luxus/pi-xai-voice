@@ -128,7 +128,8 @@ Shared xAI namespace:
       "sttEnabled": true,
       "liveTranscriptEnabled": true,
       "liveTranscriptPollingMs": 1000,
-      "liveTranscriptGhostText": true
+      "liveTranscriptGhostText": true,
+      "telegramEnabled": true
     }
   }
 }
@@ -142,17 +143,18 @@ Config lookup order:
 
 ## pi-telegram Integration
 
-Zero-config voice replies when [`pi-telegram`](https://github.com/luxus/pi-telegram) is installed. The extension automatically registers a voice outbound handler with pi-telegram on load — no manual `telegram.json` handler config needed.
+Zero-config voice replies when [`pi-telegram`](https://github.com/luxus/pi-telegram) is installed. The extension automatically registers an xAI voice provider with pi-telegram on load — no manual outbound handler config needed. If you do configure `telegram.json` outbound voice handlers, pi-telegram tries those first and uses this provider as the zero-config fallback.
 
 What happens automatically:
 
-- Voice reply toggle appears in Telegram settings menu (`/settings`)
-- TTS voice selector appears in Telegram settings menu
-- Speech tag amount selector appears in Telegram settings menu
-- When voice replies are enabled, the LLM gets guidance to use `<!-- telegram_voice ... -->` markup
-- pi-telegram extracts the markup, runs TTS via the CLI, converts to OGG/Opus, and sends as a voice message
+- `🎙️ xAI Voice: on/off` button appears in the Telegram main menu
+- The first Voice submenu button toggles this xAI Telegram provider on or off
+- TTS voice selector appears in the Voice submenu
+- pi-telegram owns reply-mode policy and voice prompt context; pi-xai-voice respects that policy and synthesizes audio
+- pi-xai-voice synthesizes the voice, converts it to OGG/Opus, and pi-telegram sends it as a native voice message
+- When `telegramEnabled` is `false`, the Telegram provider and fallback STT provider opt out while the menu stays available for re-enabling
 
-Requires pi-telegram with `registerTelegramOutboundHandler` support (commit `f897bce` or later). Falls back silently if pi-telegram is older or not installed.
+Requires pi-telegram `>=0.11.0` with `registerTelegramVoiceSynthesisProvider()` and `registerTelegramVoiceTranscriptionProvider()` support. Falls back silently if pi-telegram is older or not installed.
 
 ## Notes
 
@@ -189,7 +191,7 @@ pi-xai-voice-stt --file voice.ogg --lang auto
 printf 'Hello [pause] world' | pi-xai-voice-tts --voice eve --lang en --write-media reply.mp3
 ```
 
-For `pi-telegram`, use these commands through `telegram.json` handler-bus config:
+For older `pi-telegram` handler-bus setups, these commands can still be wired manually through `telegram.json`:
 
 ```json
 {
@@ -212,7 +214,7 @@ For `pi-telegram`, use these commands through `telegram.json` handler-bus config
 }
 ```
 
-The TTS command reads stdin when `--text` is omitted, so it composes with pi-telegram's outbound voice pipeline without provider-specific code in pi-telegram.
+The TTS command reads stdin when `--text` is omitted. Current pi-telegram integrations should prefer the automatic provider registration described above; the command-template form remains useful for older bridge versions or custom process-boundary integrations.
 
 ## Adapter API
 

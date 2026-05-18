@@ -37,8 +37,8 @@ import {
   DEFAULT_STT_ENABLED,
   DEFAULT_STT_LANGUAGE,
   DEFAULT_TAG_AMOUNT,
-  DEFAULT_VOICE_REPLY_MODE,
   DEFAULT_VOICE_SEND_TRANSCRIPT,
+  DEFAULT_XAI_TELEGRAM_PROVIDER_ENABLED,
   DEFAULT_VOICE_SHORTCUT,
   DEFAULT_VOICE_SHORTCUT_MODE,
   DEFAULT_VOICE_SPEECH_STYLE,
@@ -194,9 +194,9 @@ function createRuntime(log = createLogger()): {
     liveTranscriptPollingMs: number;
     liveTranscriptGhostText: boolean;
     tagAmount: VoiceTagAmount;
-    replyMode?: "mirror" | "voice" | "manual";
     speechStyle?: "literal" | "rewrite-light" | "rewrite-tags";
     sendTranscript?: boolean;
+    telegramEnabled: boolean;
   };
 } {
   const { apiKey, source, config } = getRequiredXaiApiKey();
@@ -248,12 +248,15 @@ function createRuntime(log = createLogger()): {
           ? preferences.liveTranscriptGhostText
           : DEFAULT_LIVE_TRANSCRIPT_GHOST_TEXT,
       tagAmount: preferences.tagAmount || DEFAULT_TAG_AMOUNT,
-      replyMode: preferences.replyMode || DEFAULT_VOICE_REPLY_MODE,
       speechStyle: preferences.speechStyle || DEFAULT_VOICE_SPEECH_STYLE,
       sendTranscript:
         typeof preferences.sendTranscript === "boolean"
           ? preferences.sendTranscript
           : DEFAULT_VOICE_SEND_TRANSCRIPT,
+      telegramEnabled:
+        typeof preferences.telegramEnabled === "boolean"
+          ? preferences.telegramEnabled
+          : DEFAULT_XAI_TELEGRAM_PROVIDER_ENABLED,
     },
   };
 }
@@ -1035,7 +1038,7 @@ const setVoiceIdTool = defineTool({
 
 export default function piXaiVoiceExtension(pi: ExtensionAPI): void {
   function registerVoiceTelegramBus(): void {
-    // Register voice outbound handler (TTS)
+    // Register voice provider (TTS)
     registerXaiVoiceTelegramHandler().catch(() => undefined);
     // Register Voice Extension Section (settings menu in Telegram)
     registerXaiVoiceTelegramSection().catch(() => undefined);
@@ -1050,19 +1053,10 @@ export default function piXaiVoiceExtension(pi: ExtensionAPI): void {
     setVoiceConfig({
       defaultVoice: runtime.defaults.voiceId,
       defaultLanguage: runtime.defaults.language,
-      replyMode: runtime.defaults.replyMode,
       speechStyle: runtime.defaults.speechStyle,
       sendTranscript: runtime.defaults.sendTranscript,
+      telegramEnabled: runtime.defaults.telegramEnabled,
     });
-    // Re-register via official helpers + always force direct registration.
-    try {
-      const piTelegram = await import("@llblab/pi-telegram");
-      piTelegram.reRegisterPersistentVoiceProviders?.();
-      piTelegram.reRegisterPersistentSections?.();
-    } catch {
-      // still try direct registration below
-    }
-
     // Always attempt direct registration on session_start (safe, disposes previous).
     // This ensures the Voice section menu and provider are present when the bridge is live.
     registerVoiceTelegramBus();
@@ -1073,7 +1067,7 @@ export default function piXaiVoiceExtension(pi: ExtensionAPI): void {
     // notify via ctx.ui if Voice section fails to register or is non-active.
     // Complements /telegram-status events from recordTelegramRuntimeEvent.
     try {
-      const piTelegram = await import("@llblab/pi-telegram");
+      const piTelegram: any = await import("@llblab/pi-telegram/lib/extension-sections.ts");
       if (typeof piTelegram.getTelegramSectionDiagnostics === "function") {
         const diags = piTelegram.getTelegramSectionDiagnostics();
         const sectionDiag = diags.find((d: any) => d && d.id === "pi-xai-voice");
@@ -1093,9 +1087,9 @@ export default function piXaiVoiceExtension(pi: ExtensionAPI): void {
         ...currentPrefs,
         voiceId: config.defaultVoice,
         defaultLanguage: config.defaultLanguage,
-        replyMode: config.replyMode,
         speechStyle: config.speechStyle,
         sendTranscript: config.sendTranscript,
+        telegramEnabled: config.telegramEnabled,
       };
       saveVoicePreferences(ctx.cwd, updatedPrefs, "project");
       setActiveVoicePreferences(updatedPrefs);
@@ -1179,6 +1173,10 @@ export default function piXaiVoiceExtension(pi: ExtensionAPI): void {
         liveTranscriptPollingMs: current.liveTranscriptPollingMs,
         liveTranscriptGhostText: current.liveTranscriptGhostText,
         tagAmount: current.tagAmount,
+        speechStyle: current.speechStyle,
+        defaultLanguage: current.language,
+        sendTranscript: current.sendTranscript,
+        telegramEnabled: current.telegramEnabled,
       };
 
       const updated = await openVoiceSettingsDialog(ctx, draft, voices, async (voice) => {

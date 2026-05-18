@@ -1,6 +1,6 @@
 {
   "name": "pi-xai-voice",
-  "version": "0.1.4",
+  "version": "0.3.0",
   "description": "Pi extension for xAI voice and audio workflows",
   "keywords": [
     "pi-package"
@@ -47,7 +47,7 @@
     "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*",
     "@earendil-works/pi-tui": "*",
-    "@llblab/pi-telegram": "*",
+    "@llblab/pi-telegram": ">=0.11.0",
     "typebox": ">=1.1.24 <2"
   },
   "engines": {
