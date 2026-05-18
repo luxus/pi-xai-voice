@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { randomBytes } from "node:crypto";
 import { piVoiceAdapterV1 } from "./voice-adapter.ts";
-import { XAI_VOICE_IDS } from "./xai-voice.ts";
+import { DEFAULT_XAI_VOICE_ID, XAI_VOICE_IDS } from "./xai-voice.ts";
 import { resolveXaiConfig } from "./xai-config.ts";
 
 /**
@@ -131,10 +131,25 @@ export async function loadPiTelegramBridge(
   }
 }
 
-async function loadPiTelegramSubmodule(
+export async function loadPiTelegramSubmodule(
   subpath: "voice" | "extension-sections" | "outbound-handlers" | "config",
+  options: { agentsRoot?: string; startDir?: string } = {},
 ): Promise<any> {
-  const startFrom = dirname(fileURLToPath(import.meta.url));
+  const { agentsRoot, startDir } = options;
+
+  // 1. Explicit agentsRoot (mainly for tests) - prefer lib/ subpath for submodule
+  if (agentsRoot) {
+    const siblingLib = join(agentsRoot, "pi-telegram", "lib", `${subpath}.ts`);
+    if (existsSync(siblingLib)) {
+      try {
+        return await import(siblingLib);
+      } catch {}
+    }
+  }
+
+  const startFrom = startDir || dirname(fileURLToPath(import.meta.url));
+
+  // 2. Fast relative paths for lib/ subpath
   const relativeCandidates = [
     join(startFrom, `../pi-telegram/lib/${subpath}.ts`),
     join(startFrom, `../../pi-telegram/lib/${subpath}.ts`),
@@ -150,10 +165,36 @@ async function loadPiTelegramSubmodule(
     }
   }
 
+  // 3. Explicit ~/.pi/agents detection (very common for luxus forks)
+  const agentsMatch = startFrom.match(
+    /(.+?[\\/]\.pi[\\/]agents[\\/]git[\\/]github\.com[\\/]luxus)[\\/]pi-xai-voice/,
+  );
+  if (agentsMatch) {
+    const luxusRoot = agentsMatch[1];
+    const siblingLib = join(luxusRoot, "pi-telegram", "lib", `${subpath}.ts`);
+    if (existsSync(siblingLib)) {
+      try {
+        return await import(siblingLib);
+      } catch {}
+    }
+  }
+
+  // 4. Robust upward package.json / folder name walk, then lib/ sub
+  const root = findLocalPiTelegramRoot(startFrom);
+  if (root) {
+    const libPath = join(root, "lib", `${subpath}.ts`);
+    if (existsSync(libPath)) {
+      try {
+        return await import(libPath);
+      } catch {}
+    }
+  }
+
+  // 5. Package subpath, fallback to bridge (which will also try options)
   try {
     return await import(`@llblab/pi-telegram/lib/${subpath}.ts`);
   } catch {
-    return loadPiTelegramBridge();
+    return loadPiTelegramBridge(options);
   }
 }
 
@@ -171,19 +212,10 @@ const VOICE_DESCRIPTIONS: Record<string, string> = {
 // ─── Shared Config ───────────────────────────────────────────────────────────
 
 let onConfigChangeCallback: ((config: PiTelegramVoiceConfig) => void) | undefined;
-let lastVoiceTranscript: string | undefined;
 let voiceConfigOverride: PiTelegramVoiceConfig | undefined;
 
 export function onVoiceConfigChanged(callback: (config: PiTelegramVoiceConfig) => void): void {
   onConfigChangeCallback = callback;
-}
-
-export function setLastVoiceTranscript(text: string): void {
-  lastVoiceTranscript = text;
-}
-
-export function getLastVoiceTranscript(): string | undefined {
-  return lastVoiceTranscript;
 }
 
 // ─── Text Rewriting for Speech ─────────────────────────────────────────────
@@ -282,7 +314,7 @@ export interface PiTelegramVoiceConfig {
 const DEFAULT_VOICE_CONFIG: PiTelegramVoiceConfig = {
   provider: "xai",
   providerOptions: {},
-  defaultVoice: "alloy",
+  defaultVoice: DEFAULT_XAI_VOICE_ID,
   defaultLanguage: "auto",
   speechStyle: "literal",
   sendTranscript: false,
@@ -394,10 +426,12 @@ function disposeVoiceProviders(): void {
   }
 }
 
-export async function registerXaiVoiceTelegramHandler(): Promise<void> {
+export async function registerXaiVoiceTelegramHandler(
+  options: { agentsRoot?: string; startDir?: string } = {},
+): Promise<void> {
   let piTelegram: any;
   try {
-    piTelegram = await loadPiTelegramSubmodule("voice");
+    piTelegram = await loadPiTelegramSubmodule("voice", options);
   } catch {
     return;
   }
@@ -417,17 +451,25 @@ export async function registerXaiVoiceTelegramHandler(): Promise<void> {
     const config = getVoiceConfig();
     if (!config.telegramEnabled) return undefined;
     const xaiConfig = resolveXaiConfig();
-    const voiceConfig = xaiConfig.xai.voice as Record<string, unknown>;
-    if (voiceConfig.sttEnabled === false) return undefined;
-    const sttLanguage =
-      typeof voiceConfig.sttLanguage === "string" && voiceConfig.sttLanguage !== "auto"
-        ? voiceConfig.sttLanguage
+    const voice =
+      xaiConfig.xai && typeof xaiConfig.xai === "object"
+        ? (xaiConfig.xai as Record<string, unknown>).voice
         : undefined;
-    const result = await piVoiceAdapterV1.transcribe({
-      filePath: file.path,
-      language: sttLanguage,
-    });
-    return result.text ? { text: result.text, language: result.language } : undefined;
+    if (voice && typeof voice === "object" && !Array.isArray(voice)) {
+      const vc = voice as Record<string, unknown>;
+      if (vc.sttEnabled === false) return undefined;
+      const sttLanguage =
+        typeof vc.sttLanguage === "string" && vc.sttLanguage !== "auto"
+          ? vc.sttLanguage
+          : undefined;
+      const result = await piVoiceAdapterV1.transcribe({
+        filePath: file.path,
+        language: sttLanguage,
+      });
+      return result.text ? { text: result.text, language: result.language } : undefined;
+    }
+    // malformed config: opt out of STT for safety
+    return undefined;
   };
 
   if (registerTranscriptionProvider) {
@@ -442,12 +484,14 @@ export async function registerXaiVoiceTelegramHandler(): Promise<void> {
     // Apply speech style (tags, light rewrite, or literal)
     const speechText = rewriteForSpeech(text, config.speechStyle);
     const cleanText = stripSpeechTags(speechText);
-    setLastVoiceTranscript(cleanText);
+
+    const lang = options?.lang || config.defaultLanguage;
+    const language = lang === "auto" ? undefined : lang;
 
     const result = await piVoiceAdapterV1.synthesize({
       text: speechText,
       voiceId: config.defaultVoice,
-      language: options?.lang || config.defaultLanguage,
+      language,
     });
 
     // Convert to OGG/Opus for Telegram (provider responsibility)
@@ -463,6 +507,7 @@ export async function registerXaiVoiceTelegramHandler(): Promise<void> {
     } catch (ffmpegErr) {
       try {
         await unlink(result.filePath).catch(() => {});
+        await unlink(oggPath).catch(() => {});
       } catch {}
       throw ffmpegErr instanceof Error ? ffmpegErr : new Error("ffmpeg conversion failed");
     }
@@ -516,15 +561,17 @@ function getXaiVoiceSectionText(config: PiTelegramVoiceConfig): string {
 
 /**
  * Register a Voice Extension Section in pi-telegram's UI.
- * Provides toggles for reply mode, TTS voice, language, speech style, and transcript.
- * (Speech Tags explanation removed per user request)
+ * Provides toggles for TTS voice, language, speech style, and transcript send.
+ * Voice reply policy is owned by pi-telegram Settings (not duplicated here).
  * Re-registers on every call — disposes the previous registration first.
  * Skips if the section is already present in pi-telegram's registry.
  */
-export async function registerXaiVoiceTelegramSection(): Promise<void> {
+export async function registerXaiVoiceTelegramSection(
+  options: { agentsRoot?: string; startDir?: string } = {},
+): Promise<void> {
   let piTelegram: any;
   try {
-    piTelegram = await loadPiTelegramSubmodule("extension-sections");
+    piTelegram = await loadPiTelegramSubmodule("extension-sections", options);
   } catch {
     return;
   }
@@ -532,7 +579,7 @@ export async function registerXaiVoiceTelegramSection(): Promise<void> {
 
   let recordEvent: ((category: string, err: unknown, details?: unknown) => void) | undefined;
   try {
-    const outbound = await loadPiTelegramSubmodule("outbound-handlers");
+    const outbound = await loadPiTelegramSubmodule("outbound-handlers", options);
     if (typeof outbound.recordTelegramRuntimeEvent === "function") {
       recordEvent = outbound.recordTelegramRuntimeEvent;
     }
@@ -545,7 +592,7 @@ export async function registerXaiVoiceTelegramSection(): Promise<void> {
       sectionDisposer?.();
       sectionDisposer = piTelegram.registerTelegramSection({
         id: "pi-xai-voice",
-        label: "🔇 xAI Voice",
+        label: "🎙️ xAI Voice",
         order: 10,
         getLabel: getXaiVoiceSectionLabel,
         render: async (ctx: any) => {

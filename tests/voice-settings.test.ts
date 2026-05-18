@@ -28,6 +28,19 @@ describe("voice settings persistence", () => {
   it("does not persist pi-telegram voice reply policy", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "pi-xai-voice-settings-"));
     try {
+      // Seed pre-existing stale replyMode to verify removal (not just omission on fresh file)
+      const settingsDir = join(cwd, ".pi");
+      const { mkdir, writeFile } = await import("node:fs/promises");
+      await mkdir(settingsDir, { recursive: true });
+      await writeFile(
+        join(settingsDir, "settings.json"),
+        JSON.stringify(
+          { xai: { voice: { replyMode: "mirror", sttEnabled: true, telegramEnabled: false } } },
+          null,
+          2,
+        ),
+      );
+
       const path = saveVoicePreferences(cwd, createPreferences(), "project");
       const saved = JSON.parse(await readFile(path, "utf8"));
 

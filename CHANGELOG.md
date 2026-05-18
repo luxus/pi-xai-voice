@@ -12,7 +12,7 @@ All notable changes to this project will be documented in this file.
 - pi-xai-voice acts as the zero-config fallback provider in pi-telegram's voice pipeline; explicit `telegram.json` outbound voice handlers remain higher priority.
 - The provider now returns `{ audioPath }` or `{ audioPath, transcriptText }`; the `sendTranscript` toggle controls whether `transcriptText` is included as the Telegram voice caption.
 - pi-xai-voice owns xAI TTS, speech rewriting, transcript choice, and OGG/Opus conversion before handing the artifact to pi-telegram for `sendVoice` delivery.
-- Removed provider-side voice prompt injection; reply-mode context belongs to pi-telegram, while pi-xai-voice only reports policy and synthesizes audio.
+- Removed provider-side voice prompt injection; reply-mode context belongs to pi-telegram, while pi-xai-voice only synthesizes audio (and provides STT transcription) for the zero-coupling provider contract.
 - Missing bridge reply mode remains pi-telegram's `hidden` default; Telegram voice mirroring starts only after pi-telegram `voice.replyMode` is explicitly set in pi-telegram Settings.
 - Registers as a pi-telegram voice transcription provider when the bridge supports `registerTelegramVoiceTranscriptionProvider()`, so xAI STT can transcribe Telegram voice input when no explicit inbound handler handled the file.
 - Telegram main menu label now shows `🎙️ xAI Voice: on/off`, and the first Voice submenu row toggles the xAI Telegram provider without reintroducing duplicate reply-mode controls.
